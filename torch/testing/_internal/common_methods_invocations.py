@@ -7301,7 +7301,7 @@ def sample_inputs_std_var(op_info, device, dtype, requires_grad, **kwargs):
         SampleInput(tensor_1d(), kwargs=dict(dim=0, unbiased=False, keepdim=False)),
 
         SampleInput(tensor_nd(), kwargs=dict(dim=(1,), correction=S // 2)),
-        SampleInput(tensor_nd(), kwargs=dict(dim=None, correction=0, keepdim=True)),
+        SampleInput(tensor_nd(), kwargs=dict(correction=0, keepdim=True)),
     ]
 
 
@@ -19204,7 +19204,7 @@ op_db: List[OpInfo] = [
     ReductionOpInfo(
         'std',
         nan_policy='propagate',
-        supports_out=False,
+        supports_out=True,
         complex_to_real=True,
         supports_forward_ad=True,
         supports_fwgrad_bwgrad=True,
@@ -19230,12 +19230,14 @@ op_db: List[OpInfo] = [
             DecorateInfo(unittest.skip("Skipped!"), 'TestReductions', 'test_ref_duplicate_values'),
             # NumPy is giving NaN for this
             DecorateInfo(unittest.skip("Skipped!"), 'TestReductions', 'test_ref_large_input'),
+            # Unsafe casting is allowed
+            DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out'),
         ),
     ),
     ReductionOpInfo(
         'var',
         nan_policy='propagate',
-        supports_out=False,
+        supports_out=True,
         assert_autodiffed=True,
         promotes_int_to_float=True,
         complex_to_real=True,
@@ -19261,6 +19263,8 @@ op_db: List[OpInfo] = [
             DecorateInfo(unittest.skip("Skipped!"), 'TestReductions', 'test_ref_duplicate_values'),
             # NumPy is giving NaN for this
             DecorateInfo(unittest.skip("Skipped!"), 'TestReductions', 'test_ref_large_input'),
+            # Unsafe casting is allowed
+            DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out'),
         ),
     ),
     ReductionOpInfo(
