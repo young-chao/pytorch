@@ -280,6 +280,8 @@ CROSS_REF_EXCLUDE_SET = {
     # See https://github.com/pytorch/pytorch/issues/81669
     (None, None, "nn.functional.relu6"),
     (None, None, "meshgrid"),
+    (None, None, "nn.functional.mish"),
+    (None, None, "nn.functional.silu"),
 }
 
 all_decomposed = set()
