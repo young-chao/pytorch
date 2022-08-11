@@ -12,7 +12,7 @@ from functorch._C import CompileCache
 from functorch.experimental import functionalize
 from . import config
 from .decompositions import register_decomposition
-from .partitioners import default_partition
+from .partitioners import default_partition, move_input_mutations_into_submodule
 from .named_members_polyfill import _named_parameters, _named_buffers
 from typing import Callable, List, Dict, Any, Tuple, Optional
 from functools import wraps
@@ -186,12 +186,16 @@ def create_aot_autograd_function(
     compiled_fw = None
     compiled_bw = None
     num_outs = None
+    num_mutated_inputs = None
+    original_inputs_needing_mutation = None
+    input_mutation_submodule = None
 
     class CompiledFunction(torch.autograd.Function):
         @staticmethod
         @disable_torchdynamo
         def forward(ctx, *flat_tensor_args):
-            nonlocal compiled_fw, compiled_bw, num_outs
+            nonlocal compiled_fw, compiled_bw, num_outs, num_mutated_inputs
+            nonlocal original_inputs_needing_mutation, input_mutation_submodule
             # Disable the JIT Autocast flag to prevent re-autocasting of jitted graph.
             # TODO - Remove when https://github.com/pytorch/functorch/pull/794 is fixed.
             old_jit_autocast_flag = torch._C._jit_set_autocast_mode(False)
@@ -231,6 +235,19 @@ def create_aot_autograd_function(
                             def fake_fn(primals, tangents):
                                 return fx_g(primals, tangents)
                             fx_g = make_fx(functionalize(fake_fn))(*joint_inputs)
+                            # If the original user's program mutated any tensor inputs,
+                            # when functinalization is turned on, we want to move
+                            # these mutations into an opaque submodule
+                            # so our graph infra can assume a functional graph.
+                            mutated_inputs_map = move_input_mutations_into_submodule(fx_g)
+                            num_mutated_inputs = len([x for x in mutated_inputs_map if x])
+                            original_inputs_needing_mutation = []
+                            for is_mutated, x in zip(mutated_inputs_map, flat_tensor_args):
+                                if is_mutated:
+                                    original_inputs_needing_mutation.append(x)
+                            # The joint graph isn't kept around in the cached autograd.Function
+                            # but we need to make sure to save the input mutation submodule
+                            input_mutation_submodule = fx_g.input_mutation_submodule
 
                 if config.debug_joint:
                     print(fx_g.code)
@@ -244,6 +261,14 @@ def create_aot_autograd_function(
                 with track_graph_compiling("forward"):
                     compiled_fw = fw_compiler(fw_module, flat_tensor_args)
                 fw_outs = normalize_as_list(compiled_fw(*flat_tensor_args))
+                if config.use_functionalize:
+                    # Call the input mutation submodule with the mutated inputs
+                    mutated_inputs = fw_outs[:num_mutated_inputs]
+                    fw_outs = fw_outs[num_mutated_inputs:]
+                    # The input mutation module expects inputs in the same order as the original graph,
+                    # but in the order (inpt1_old, inpt1_new, inpt2_old, inpt2_new, ...)
+                    mutated_input_args = [x for pair in zip(original_inputs_needing_mutation, mutated_inputs) for x in pair]
+                    input_mutation_submodule(*mutated_input_args)
                 if config.debug_partitioner:
                     activation_sizes = 0
                     for out in fw_outs[num_outs:]:
@@ -256,6 +281,12 @@ def create_aot_autograd_function(
                     compiled_bw = bw_compiler(bw_module, bw_args)
             else:
                 fw_outs = normalize_as_list(compiled_fw(*flat_tensor_args))
+                if config.use_functionalize:
+                    # Call the input mutation submodule with the mutated inputs
+                    mutated_inputs = fw_outs[:num_mutated_inputs]
+                    fw_outs = fw_outs[num_mutated_inputs:]
+                    mutated_input_args = [x for pair in zip(original_inputs_needing_mutation, mutated_inputs) for x in pair]
+                    input_mutation_submodule(*mutated_input_args)
             torch._C._jit_set_autocast_mode(old_jit_autocast_flag)
             ctx.save_for_backward(*fw_outs[num_outs:])
             return tuple(fw_outs[0:num_outs])
