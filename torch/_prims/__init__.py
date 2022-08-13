@@ -340,7 +340,14 @@ def _make_prim(
     # don't have derivative formulas, we must setup a custom autograd function
     # that raises an error if backwards is invoked
     def _autograd_impl(*args, **kwargs):
+<<<<<<< HEAD
         return backwards_not_supported(_prim)(*args, **kwargs)
+=======
+        g = torch._C._AutoDispatchBelowAutograd()
+        return _prim(*args, **kwargs)
+        # flat_args, args_spec = tree_flatten((args, kwargs))
+        # return BackwardsNotSupported.apply(args_spec, *flat_args)
+>>>>>>> 59000f51cbf ([WIP] Added support for tracing through autograd)
 
     _meta_impl = _wrap_tensor_meta(meta)
 

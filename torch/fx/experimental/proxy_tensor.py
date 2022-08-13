@@ -19,7 +19,7 @@ import inspect
 
 from torch.utils._python_dispatch import TorchDispatchMode, enable_torch_dispatch_mode
 from torch._subclasses import FakeTensor
-from .symbolic_shapes import ShapeEnv, magic_methods, reflectable_magic_methods
+from .symbolic_shapes import ShapeEnv, is_symbolic_op, magic_methods, reflectable_magic_methods
 import torch.fx.experimental.symbolic_shapes as symbolic_shapes
 
 __all__ = ["ProxyTensor", "PythonKeyTracer", "dispatch_trace", "make_fx", "DecompositionInterpreter"]
@@ -146,6 +146,8 @@ def unwrap_elem(e):
 
 
 def proxy_call(proxy_mode, func_overload, args, kwargs=None):
+    if symbolic_shapes.is_symbolic_op(func_overload):
+        return symbolic_shapes.handle_symbolic_op(func_overload, args, kwargs)
     if kwargs is None:
         kwargs = {}
 
@@ -437,7 +439,6 @@ class ProxyTorchDispatchMode(TorchDispatchMode):
 
             if func_overload is torch.ops.aten.lift_fresh.default:
                 func_overload = torch.ops.aten.lift_fresh_copy.default
-
             proxy_res = self.tracer.create_proxy('call_function', func_overload, args, kwargs,
                                                  name=self.tracer.graph._target_to_str(func.__name__))
 
@@ -546,7 +547,7 @@ def make_fx(f, decomposition_table=None, tracing_mode="real"):
         # todo: Figure out a more informative name for symints
         def wrap_fake_symbolic(x, sym_shape):
             if isinstance(x, torch.Tensor):
-                val = FakeTensor(fake_tensor_mode, torch.empty(sym_shape, device="meta"), x.device)
+                val = FakeTensor(fake_tensor_mode, torch.empty(sym_shape, device="meta", requires_grad=x.requires_grad), x.device)
                 return val
             return x
 
