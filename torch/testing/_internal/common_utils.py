@@ -670,6 +670,7 @@ def run_tests(argv=UNITTEST_ARGS):
                 global disabled_tests_dict
                 disabled_tests_dict = json.load(fp)
                 os.environ['DISABLED_TESTS_FILE'] = DISABLED_TESTS_FILE
+                print(disabled_tests_dict)
         else:
             warnings.warn(f'disabled test file provided but not found: {DISABLED_TESTS_FILE}')
     # Determine the test launch mechanism
