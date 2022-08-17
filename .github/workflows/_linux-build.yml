@@ -48,6 +48,8 @@ jobs:
       # checkout because when we run this action we don't *have* a local
       # checkout. In other cases you should prefer a local checkout.
       - name: check github context
+        run: |
+          echo "Hello"
         env:
           THING: ${{ toJson(github) }}
       - name: Checkout PyTorch
