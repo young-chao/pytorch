@@ -89,7 +89,7 @@ def _run_ort(ort_session, inputs):
             )
         ort_inputs[ort_session_inputs[i].name] = input
     ort_outs = ort_session.run(None, ort_inputs)
-    return _inline_flatten_list(ort_outs, [])
+    return ort_outs
 
 
 def _ort_session(
@@ -122,6 +122,7 @@ def _compare_ort_pytorch_outputs(
     atol: float,
     check_shape: bool,
     check_dtype: bool,
+    flatten: bool,
     acceptable_error_percentage: Optional[float],
 ):
     """
@@ -132,6 +133,10 @@ def _compare_ort_pytorch_outputs(
         pt_outs: outputs from PyTorch.
         rtol (float, optional): relative tolerance in comparison between ONNX and PyTorch outputs.
         atol (float, optional): absolute tolerance in comparison between ONNX and PyTorch outputs.
+        flatten (bool, optional): Default True. If True, ignore None type in
+            torch output, which is usually the case with tracing. Set this to False if
+            the 'output' should keep None type, which is usually the case with exporting
+            ScriptModules.
         acceptable_error_percentage (float, optional): acceptable percentage of element mismatches in comparison.
             It should be a float of value between 0.0 and 1.0.
 
@@ -140,9 +145,13 @@ def _compare_ort_pytorch_outputs(
             equal up to specified precision.
         ValueError: if arguments provided are invalid.
     """
-    pt_outs, _ = torch.jit._flatten(pt_outs)
+    if flatten:
+        # torch.jit._flatten filters None type
+        pt_outs, _ = torch.jit._flatten(pt_outs)
+    else:
+        pt_outs = _inline_flatten_list([pt_outs], [])
     pt_outs = _unpack_to_numpy(pt_outs, cast_onnx_accepted=False)
-
+    ort_outs = _inline_flatten_list(ort_outs, [])
     assert len(ort_outs) == len(
         pt_outs
     ), f"Number of outputs differ ONNX runtime: ({len(ort_outs)}) PyTorch: ({len(pt_outs)})"
@@ -309,6 +318,7 @@ def _compare_ort_pytorch_model(
             atol,
             check_shape,
             check_dtype,
+            flatten,
             accetable_error_persentage,
         )
 
@@ -620,9 +630,10 @@ def verify(
             model, supplying all inputs will cause an error on unexpected inputs.
             This parameter tells the verifier which inputs to pass into the ONNX model.
         flatten (bool, optional): Default True. If True, unpack nested list/tuple/dict
-            inputs into a flattened list of Tensors for ONNX. Set this to False if nested
-            structures are to be preserved for ONNX, which is usually the case with
-            exporting ScriptModules.
+            'inputs' into a flattened list of Tensors for ONNX, and ignore None type in
+            torch output, which is usually the case with tracing. Set this to False if
+            nested structures are to be preserved for ONNX, and the 'output' should keep
+            None type, which is usually the case with exporting ScriptModules.
         check_shape (bool, optional): Default True. If True, check the shapes between
             PyTorch and ONNX Runtime outputs are exactly the same. Set this to False to allow
             output shape broadcasting.
