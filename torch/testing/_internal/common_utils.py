@@ -125,6 +125,7 @@ if os.getenv("DISABLED_TESTS_FILE", ""):
     with open(os.getenv("DISABLED_TESTS_FILE"), 'r') as fp:
         disabled_tests_dict = json.load(fp)
         warnings.warn(f"loaded {len(disabled_tests_dict)} disabled tests")
+print(disabled_tests_dict)
 
 NATIVE_DEVICES = ('cpu', 'cuda', 'meta')
 
@@ -1605,6 +1606,9 @@ def check_if_enable(test: unittest.TestCase):
         if not TEST_WITH_SLOW:
             raise unittest.SkipTest("test is slow; run with PYTORCH_TEST_WITH_SLOW to enable test")
     sanitized_test_method_name = remove_device_and_dtype_suffixes(test._testMethodName)
+    print(test._testMethodName)
+    print(sanitized_test_method_name)
+    print(disabled_test_suite)
     if not IS_SANDCASTLE:
         for disabled_test, (issue_url, platforms) in disabled_tests_dict.items():
             disable_test_parts = disabled_test.split()
