@@ -1336,6 +1336,10 @@ class TestOperators(TestCase):
                 self._compare_jacobians_of_vjp(fn, (cotangents, input, weight, bias))
 
     @ops(op_db + additional_op_db, allowed_dtypes=(torch.float32, torch.double))
+    @opsToleranceOverride('TestOperators', 'test_jvp', (
+        tol1('linalg.multi_dot',
+             {torch.float32: tol(atol=1e-04, rtol=1e-04)}),
+    ))
     @skipOps('TestOperators', 'test_vmap_autograd_grad', {
         # call inplace functions
         xfail('linalg.householder_product'),  # inplace
