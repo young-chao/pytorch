@@ -8180,6 +8180,7 @@ dedent """
 
             self.assertEqual(foo(*inputs), outputs[0])
 
+    @skipIfTorchDynamo("https://github.com/pytorch/torchdynamo/issues/847")
     def test_desugar_module(self):
         import torch.nn.functional as F
 

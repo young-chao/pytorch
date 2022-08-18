@@ -2869,6 +2869,7 @@ class TestTensorCreation(TestCase):
 
     @onlyNativeDeviceTypes
     @precisionOverride({torch.bfloat16: 5e-2, torch.half: 1e-3})
+    @skipIfTorchDynamo("https://github.com/pytorch/torchdynamo/issues/847")
     @unittest.skipIf(not TEST_SCIPY, "Scipy not found")
     @dtypesIfCUDA(torch.float, torch.double, torch.bfloat16, torch.half, torch.long)
     @dtypes(torch.float, torch.double, torch.long)
@@ -2878,6 +2879,7 @@ class TestTensorCreation(TestCase):
 
     @onlyNativeDeviceTypes
     @precisionOverride({torch.bfloat16: 5e-2, torch.half: 1e-3})
+    @skipIfTorchDynamo("https://github.com/pytorch/torchdynamo/issues/847")
     @unittest.skipIf(not TEST_SCIPY, "Scipy not found")
     @dtypesIfCUDA(torch.float, torch.double, torch.bfloat16, torch.half, torch.long)
     @dtypes(torch.float, torch.double, torch.long)
