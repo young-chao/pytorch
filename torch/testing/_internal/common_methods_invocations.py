@@ -93,17 +93,12 @@ from torch.testing._internal.opinfo.core import (  # noqa: F401
     sample_inputs_foreach,
     ForeachFuncInfo,
 )
+from torch.testing._internal import opinfo
 
-has_scipy_fft = False
 if TEST_SCIPY:
     from scipy import stats
     import scipy.spatial
     import scipy.special
-    try:
-        import scipy.fft
-        has_scipy_fft = True
-    except ModuleNotFoundError:
-        pass
 
 
 # test if a tensor is close to an integer
@@ -1697,27 +1692,32 @@ def error_inputs_margin_ranking_loss(op, device, **kwargs):
     yield ErrorInput(SampleInput(make_input(5, 4), args=(make_input(5, 4), make_input(5,),)),
                      error_regex='margin_ranking_loss : All input tensors should')
 
-def sample_inputs_new_fns(self, device, dtype, requires_grad, **kwargs):
+def sample_inputs_new_fns(self, device, dtype, requires_grad, *, is_strided=False, **kwargs):
+    # input_shape, output_shape, strides, kwargs
+    # lengths of output_shape and strides must be equal
     inputs = [
-        ((), (), {}),
-        ((S, S), (2, 0), {}),
-        ((0, S, 0), (3, 2, 2), {}),
-        ((S,), (2, 3), {'dtype': dtype, 'device': device}),
+        ((), (), (), {}),
+        ((S, S), (2, 0), (3, 4), {}),
+        ((0, S, 0), (3, 2, 2), (1, 2, 3), {}),
+        ((S,), (2, 3), (7, 8), {'dtype': dtype, 'device': device}),
         # Hard-code some dtypes/devices. We want to test cases where the
         # (dtype, device) is different from the input's (dtype, device)
-        ((S,), (10,), {'dtype': torch.double}),
-        ((S,), (1, 1, 12), {'device': 'cpu'}),
-        ((S,), (2, 2, 2), {'dtype': torch.double, 'device': 'cpu'}),
+        ((S,), (10,), (S,), {'dtype': torch.double}),
+        ((S,), (1, 1, 12), (S, L, M), {'device': 'cpu'}),
+        ((S,), (2, 2, 2), (L, M, S), {'dtype': torch.double, 'device': 'cpu'}),
     ]
     if torch.cuda.is_available():
-        inputs.append(((S,), (7, 2), {'device': 'cuda'}))
+        inputs.append(((S,), (7, 2), (3, 4), {'device': 'cuda'}))
 
     samples = []
-    for input_shape, output_shape, kwargs in inputs:
+    for input_shape, output_shape, strides, kwargs in inputs:
         t = make_tensor(input_shape, dtype=dtype, device=device,
                         low=None, high=None,
                         requires_grad=requires_grad)
-        samples.append(SampleInput(t, args=(output_shape,), kwargs=kwargs))
+        if is_strided:
+            samples.append(SampleInput(t, args=(output_shape, strides), kwargs=kwargs))
+        else:
+            samples.append(SampleInput(t, args=(output_shape,), kwargs=kwargs))
 
     return tuple(samples)
 
@@ -1730,6 +1730,41 @@ def sample_inputs_empty(op, device, dtype, requires_grad, **kwargs):
     for case in cases:
         _kwargs = {'device': device, 'dtype': dtype, 'requires_grad': requires_grad}
         yield SampleInput(case, args=(), kwargs=_kwargs)
+
+def sample_inputs_eye(op, device, dtype, requires_grad, **kwargs):
+    # only ints >= 0 are allowed for both arguments, unless m is omitted
+    sizes = (None, 0, 1, 2, 3, 4, 7, L, M, S)
+
+    for n, m in product(sizes, sizes):
+        if n is None:
+            continue
+
+        # TODO: no layout
+        _kwargs = {'device': device, 'dtype': dtype, 'requires_grad': requires_grad}
+        if m is None:
+            yield SampleInput(n, args=(), kwargs=_kwargs)
+        else:
+            yield SampleInput(n, args=(m,), kwargs=_kwargs)
+
+def error_inputs_eye(op_info, device, **kwargs):
+    # TODO: no layout
+    _kwargs = {'device': device, 'dtype': torch.float32}
+
+    yield ErrorInput(
+        SampleInput(-1, args=(), kwargs=_kwargs),
+        error_regex="n must be greater or equal to 0, got -1"
+    )
+
+    yield ErrorInput(
+        SampleInput(-7, args=(42,), kwargs=_kwargs),
+        error_regex="n must be greater or equal to 0, got -7"
+    )
+
+    yield ErrorInput(
+        SampleInput(0, args=(-3,), kwargs=_kwargs),
+        error_regex="m must be greater or equal to 0, got -3"
+    )
+
 
 def sample_inputs_new_full(self, device, dtype, requires_grad, **kwargs):
     def get_val(dtype):
@@ -4723,18 +4758,6 @@ def sample_inputs_istft(op_info, device, dtype, requires_grad, **kwargs):
     yield SampleInput(mt((10, 5, 6)), kwargs=dict(n_fft=8, window=real_window[:8], center=center))
 
 
-def sample_inputs_fftshift(op_info, device, dtype, requires_grad, **kwargs):
-    def mt(shape, **kwargs):
-        return make_tensor(shape, device=device, dtype=dtype,
-                           requires_grad=requires_grad, **kwargs)
-
-    yield SampleInput(mt((9, 10)))
-    yield SampleInput(mt((50,)), kwargs=dict(dim=0))
-    yield SampleInput(mt((5, 11)), kwargs=dict(dim=(1,)))
-    yield SampleInput(mt((5, 6)), kwargs=dict(dim=(0, 1)))
-    yield SampleInput(mt((5, 6, 2)), kwargs=dict(dim=(0, 2)))
-
-
 def sample_inputs_linalg_cholesky_inverse(op_info, device, dtype, requires_grad=False, **kwargs):
     from torch.testing._internal.common_utils import random_well_conditioned_matrix
 
@@ -5790,23 +5813,27 @@ def sample_inputs_diagonal_diag_embed(op_info, device, dtype, requires_grad, **k
     for shape, kwarg in chain(product(shapes_2d, kwargs_2d), product(shapes_3d, kwargs_3d)):
         yield SampleInput(make_arg(shape), kwargs=kwarg)
 
-def reference_inputs_diagonal(op_info, device, dtype, requires_grad, **kwargs):
+def reference_inputs_diagonal_diag_embed(op_info, device, dtype, requires_grad, **kwargs):
     yield from sample_inputs_diagonal_diag_embed(
         op_info, device, dtype, requires_grad, **kwargs)
 
     make_arg = partial(
         make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
 
+    shapes1d = ((0,), (1,))
     shapes2d = ((L, M),)
     shapes3d = ((L, M, S),)
+
+    kwargs1d = dict()
 
     kwargs2d = (
         # dim1 > dim2 is allowed
         dict(dim1=1, dim2=0),
         # negative dims are allowed
         dict(dim1=-2, dim2=-1),
-        # out of bounds offset should return an empty tensor
-        dict(offset=10000),
+        # out of bounds offset should return an empty tensor in diagonal and
+        # offset the diagonal in diag_embed
+        dict(offset=100),
     )
 
     kwargs3d = kwargs2d + (
@@ -5814,17 +5841,25 @@ def reference_inputs_diagonal(op_info, device, dtype, requires_grad, **kwargs):
         dict(offset=-1, dim1=0, dim2=2),
     )
 
+    samples1d = product(shapes1d, kwargs1d)
     samples2d = product(shapes2d, kwargs2d)
     samples3d = product(shapes3d, kwargs3d)
 
-    for shape, kwargs in chain(samples2d, samples3d):
+    for shape, kwargs in chain(samples1d, samples2d, samples3d):
+        if op_info.name in ('diagonal', '_refs.diagonal'):
+            # these are error inputs for diagonal
+            if shape in ((0,), (1,)):
+                continue
         yield SampleInput(input=make_arg(shape), kwargs=kwargs)
 
-def error_inputs_diagonal(op_info, device, **kwargs):
+def error_inputs_diagonal_diag_embed(op_info, device, **kwargs):
     make_arg = partial(make_tensor, device=device, dtype=torch.float32)
 
+    shapes1d = (0, 1, (0,), (1,))
     shapes2d = ((M, L),)
     shapes3d = ((M, S, L),)
+
+    kwargs1d = dict()
 
     kwargs2d = (
         # dim1 == dim2 is not allowed
@@ -5836,16 +5871,27 @@ def error_inputs_diagonal(op_info, device, **kwargs):
 
     kwargs3d = kwargs2d
 
+    samples1d = product(shapes1d, kwargs1d)
     samples2d = product(shapes2d, kwargs2d)
     samples3d = product(shapes3d, kwargs3d)
 
-    for shape, kwargs in chain(samples2d, samples3d):
+    for shape, kwargs in chain(samples1d, samples2d, samples3d):
         arg = make_arg(shape)
         sample = SampleInput(input=arg, kwargs=kwargs)
 
         dim1 = kwargs.get('dim1')
         dim2 = kwargs.get('dim2')
-        num_dim = arg.dim()
+
+        if op_info.name in ('diagonal', '_refs.diagonal'):
+            num_dim = arg.dim()
+        elif op_info.name in ('diag_embed', '_refs.diag_embed'):
+            # these are valid inputs for diag_embed
+            if shape in ((0,), (1,)):
+                continue
+            num_dim = arg.dim() + 1
+        else:
+            raise RuntimeError("should be unreachable")
+
         bound1 = -num_dim
         bound2 = num_dim - 1
         dim_range = range(bound1, bound2 + 1)
@@ -10011,7 +10057,9 @@ op_db: List[OpInfo] = [
            gradcheck_fast_mode=True,
            supports_forward_ad=True,
            supports_fwgrad_bwgrad=True,
-           sample_inputs_func=sample_inputs_diagonal_diag_embed),
+           sample_inputs_func=sample_inputs_diagonal_diag_embed,
+           reference_inputs_func=reference_inputs_diagonal_diag_embed,
+           error_inputs_func=error_inputs_diagonal_diag_embed),
     OpInfo('diagonal',
            # They are not strictly aliases as they have diverging defaults, but we can see them as aliases for testing purposes
            # If we add tests that test the function against the alias, make linalg.diagonal into its own OpInfo
@@ -10022,8 +10070,8 @@ op_db: List[OpInfo] = [
            supports_forward_ad=True,
            supports_fwgrad_bwgrad=True,
            sample_inputs_func=sample_inputs_diagonal_diag_embed,
-           reference_inputs_func=reference_inputs_diagonal,
-           error_inputs_func=error_inputs_diagonal),
+           reference_inputs_func=reference_inputs_diagonal_diag_embed,
+           error_inputs_func=error_inputs_diagonal_diag_embed),
     OpInfo('diagonal_scatter',
            dtypes=all_types_and(torch.bool, torch.bfloat16, torch.float16),
            supports_out=False,
@@ -10127,396 +10175,6 @@ op_db: List[OpInfo] = [
                        DecorateInfo(unittest.expectedFailure, 'TestNNCOpInfo', 'test_nnc_correctness',
                                     dtypes=(torch.float32, torch.float64)),
                    )),
-    SpectralFuncInfo('fft.fft',
-                     aten_name='fft_fft',
-                     decomp_aten_name='_fft_c2c',
-                     ref=np.fft.fft,
-                     ndimensional=SpectralFuncType.OneD,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     ),
-    SpectralFuncInfo('fft.fft2',
-                     aten_name='fft_fft2',
-                     ref=np.fft.fft2,
-                     decomp_aten_name='_fft_c2c',
-                     ndimensional=SpectralFuncType.TwoD,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     decorators=[precisionOverride(
-                         {torch.float: 1e-4, torch.cfloat: 1e-4})],
-                     ),
-    SpectralFuncInfo('fft.fftn',
-                     aten_name='fft_fftn',
-                     decomp_aten_name='_fft_c2c',
-                     ref=np.fft.fftn,
-                     ndimensional=SpectralFuncType.ND,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     decorators=[precisionOverride(
-                         {torch.float: 1e-4, torch.cfloat: 1e-4})]),
-    SpectralFuncInfo('fft.hfft',
-                     aten_name='fft_hfft',
-                     decomp_aten_name='_fft_c2r',
-                     ref=np.fft.hfft,
-                     ndimensional=SpectralFuncType.OneD,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     check_batched_gradgrad=False,
-                     skips=(
-                         # Issue with conj and torch dispatch, see https://github.com/pytorch/pytorch/issues/82479
-                         DecorateInfo(
-                             unittest.skip("Skipped!"),
-                             'TestSchemaCheckModeOpInfo',
-                             'test_schema_correctness',
-                             dtypes=(torch.complex64, torch.complex128)
-                         ),
-                     )),
-    SpectralFuncInfo('fft.hfft2',
-                     aten_name='fft_hfft2',
-                     decomp_aten_name='_fft_c2r',
-                     ref=scipy.fft.hfft2 if has_scipy_fft else None,
-                     ndimensional=SpectralFuncType.TwoD,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     check_batched_gradgrad=False,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     decorators=[
-                         DecorateInfo(
-                             precisionOverride({torch.float: 2e-4, torch.cfloat: 2e-4}),
-                             'TestFFT', 'test_reference_nd')],
-                     skips=(
-                         # Issue with conj and torch dispatch, see https://github.com/pytorch/pytorch/issues/82479
-                         DecorateInfo(
-                             unittest.skip("Skipped!"),
-                             'TestSchemaCheckModeOpInfo',
-                             'test_schema_correctness'
-                         ),
-                     )),
-    SpectralFuncInfo('fft.hfftn',
-                     aten_name='fft_hfftn',
-                     decomp_aten_name='_fft_c2r',
-                     ref=scipy.fft.hfftn if has_scipy_fft else None,
-                     ndimensional=SpectralFuncType.ND,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     check_batched_gradgrad=False,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     decorators=[
-                         DecorateInfo(
-                             precisionOverride({torch.float: 2e-4, torch.cfloat: 2e-4}),
-                             'TestFFT', 'test_reference_nd'), ],
-                     skips=(
-                         # Issue with conj and torch dispatch, see https://github.com/pytorch/pytorch/issues/82479
-                         DecorateInfo(
-                             unittest.skip("Skipped!"),
-                             'TestSchemaCheckModeOpInfo',
-                             'test_schema_correctness'
-                         ),
-                     )),
-    SpectralFuncInfo('fft.rfft',
-                     aten_name='fft_rfft',
-                     decomp_aten_name='_fft_r2c',
-                     ref=np.fft.rfft,
-                     ndimensional=SpectralFuncType.OneD,
-                     dtypes=all_types_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and(torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half,)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     check_batched_grad=False,
-                     skips=(
-                     ),
-                     check_batched_gradgrad=False),
-    SpectralFuncInfo('fft.rfft2',
-                     aten_name='fft_rfft2',
-                     decomp_aten_name='_fft_r2c',
-                     ref=np.fft.rfft2,
-                     ndimensional=SpectralFuncType.TwoD,
-                     dtypes=all_types_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and(torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half,)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     check_batched_grad=False,
-                     check_batched_gradgrad=False,
-                     decorators=[
-                         precisionOverride({torch.float: 1e-4}),
-                     ],),
-    SpectralFuncInfo('fft.rfftn',
-                     aten_name='fft_rfftn',
-                     decomp_aten_name='_fft_r2c',
-                     ref=np.fft.rfftn,
-                     ndimensional=SpectralFuncType.ND,
-                     dtypes=all_types_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and(torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half,)),
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     check_batched_grad=False,
-                     check_batched_gradgrad=False,
-                     decorators=[
-                         precisionOverride({torch.float: 1e-4}),
-                     ],),
-    SpectralFuncInfo('fft.ifft',
-                     aten_name='fft_ifft',
-                     decomp_aten_name='_fft_c2c',
-                     ref=np.fft.ifft,
-                     ndimensional=SpectralFuncType.OneD,
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),),
-    SpectralFuncInfo('fft.ifft2',
-                     aten_name='fft_ifft2',
-                     decomp_aten_name='_fft_c2c',
-                     ref=np.fft.ifft2,
-                     ndimensional=SpectralFuncType.TwoD,
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     decorators=[
-                         DecorateInfo(
-                             precisionOverride({torch.float: 1e-4, torch.cfloat: 1e-4}),
-                             'TestFFT', 'test_reference_nd')],
-                     ),
-    SpectralFuncInfo('fft.ifftn',
-                     aten_name='fft_ifftn',
-                     decomp_aten_name='_fft_c2c',
-                     ref=np.fft.ifftn,
-                     ndimensional=SpectralFuncType.ND,
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     decorators=[
-                         DecorateInfo(
-                             precisionOverride({torch.float: 1e-4, torch.cfloat: 1e-4}),
-                             'TestFFT', 'test_reference_nd')],
-                     ),
-    SpectralFuncInfo('fft.ihfft',
-                     aten_name='fft_ihfft',
-                     decomp_aten_name='_fft_r2c',
-                     ref=np.fft.ihfft,
-                     ndimensional=SpectralFuncType.OneD,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and(torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half,)),
-                     skips=(
-                     ),
-                     check_batched_grad=False),
-    SpectralFuncInfo('fft.ihfft2',
-                     aten_name='fft_ihfft2',
-                     decomp_aten_name='_fft_r2c',
-                     ref=scipy.fft.ihfftn if has_scipy_fft else None,
-                     ndimensional=SpectralFuncType.TwoD,
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and(torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half,)),
-                     check_batched_grad=False,
-                     check_batched_gradgrad=False,
-                     decorators=(
-                         # The values for attribute 'shape' do not match: torch.Size([5, 6, 5]) != torch.Size([5, 6, 6]).
-                         DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warning'),
-                         DecorateInfo(precisionOverride({torch.float: 2e-4}), 'TestFFT', 'test_reference_nd'),
-                         # Mismatched elements!
-                         DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out'),
-                         DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warnings'))),
-    SpectralFuncInfo('fft.ihfftn',
-                     aten_name='fft_ihfftn',
-                     decomp_aten_name='_fft_r2c',
-                     ref=scipy.fft.ihfftn if has_scipy_fft else None,
-                     ndimensional=SpectralFuncType.ND,
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archss
-                     dtypesIfCUDA=all_types_and(torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half,)),
-                     check_batched_grad=False,
-                     check_batched_gradgrad=False,
-                     decorators=[
-                         # The values for attribute 'shape' do not match: torch.Size([5, 6, 5]) != torch.Size([5, 6, 6]).
-                         DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warning'),
-                         # Mismatched elements!
-                         DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out'),
-                         DecorateInfo(
-                             precisionOverride({torch.float: 2e-4}),
-                             'TestFFT', 'test_reference_nd')],
-                     ),
-    SpectralFuncInfo('fft.irfft',
-                     aten_name='fft_irfft',
-                     decomp_aten_name='_fft_c2r',
-                     ref=np.fft.irfft,
-                     ndimensional=SpectralFuncType.OneD,
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     check_batched_gradgrad=False),
-    SpectralFuncInfo('fft.irfft2',
-                     aten_name='fft_irfft2',
-                     decomp_aten_name='_fft_c2r',
-                     ref=np.fft.irfft2,
-                     ndimensional=SpectralFuncType.TwoD,
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     check_batched_gradgrad=False,
-                     decorators=[
-                         DecorateInfo(
-                             precisionOverride({torch.float: 1e-4, torch.cfloat: 1e-4}),
-                             'TestFFT', 'test_reference_nd')],
-                     ),
-    SpectralFuncInfo('fft.irfftn',
-                     aten_name='fft_irfftn',
-                     decomp_aten_name='_fft_c2r',
-                     ref=np.fft.irfftn,
-                     ndimensional=SpectralFuncType.ND,
-                     # https://github.com/pytorch/pytorch/issues/80411
-                     gradcheck_fast_mode=True,
-                     supports_forward_ad=True,
-                     supports_fwgrad_bwgrad=True,
-                     # See https://github.com/pytorch/pytorch/pull/78358
-                     check_batched_forward_grad=False,
-                     dtypes=all_types_and_complex_and(torch.bool),
-                     # rocFFT doesn't support Half/Complex Half Precision FFT
-                     # CUDA supports Half/ComplexHalf Precision FFT only on SM53 or later archs
-                     dtypesIfCUDA=all_types_and_complex_and(
-                         torch.bool, *() if (TEST_WITH_ROCM or not SM53OrLater) else (torch.half, torch.complex32)),
-                     check_batched_gradgrad=False,
-                     decorators=[
-                         DecorateInfo(
-                             precisionOverride({torch.float: 1e-4, torch.cfloat: 1e-4}),
-                             'TestFFT', 'test_reference_nd')],
-                     ),
-    OpInfo('fft.fftshift',
-           dtypes=all_types_and_complex_and(torch.bool, torch.bfloat16, torch.half, torch.chalf),
-           sample_inputs_func=sample_inputs_fftshift,
-           supports_out=False,
-           supports_forward_ad=True,
-           supports_fwgrad_bwgrad=True,
-           ),
-    OpInfo('fft.ifftshift',
-           dtypes=all_types_and_complex_and(torch.bool, torch.bfloat16, torch.half, torch.chalf),
-           sample_inputs_func=sample_inputs_fftshift,
-           supports_out=False,
-           supports_forward_ad=True,
-           supports_fwgrad_bwgrad=True,
-           ),
     OpInfo('stft',
            decorators=[
                skipCPUIfNoFFT,
@@ -12066,7 +11724,9 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.skip('Fails on cuda + rocm'), 'TestCommon', 'test_complex_half_reference_testing'),
                DecorateInfo(unittest.expectedFailure, 'TestGradients', 'test_fn_grad'),
                DecorateInfo(unittest.expectedFailure, 'TestGradients', 'test_fn_gradgrad'),
-               DecorateInfo(unittest.skip('Passes on complex128 and float64 only'), 'TestGradients', 'test_fn_fwgrad_bwgrad'),)),
+               DecorateInfo(unittest.skip('Passes on complex128 and float64 only'), 'TestGradients', 'test_fn_fwgrad_bwgrad'),
+               # AssertionError: Tensor-likes are not close! (new_empty_strided.default)
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"), 'TestDecomp', 'test_comprehensive'),)),
     OpInfo('native_layer_norm',
            aten_name='native_layer_norm',
            ref=reference_native_layer_norm,
@@ -12539,6 +12199,8 @@ op_db: List[OpInfo] = [
                # RuntimeError: falseINTERNAL ASSERT FAILED at
                # "../torch/csrc/jit/passes/utils/check_alias_annotation.cpp":185, please report a bug to PyTorch.
                DecorateInfo(unittest.skip("Skipped!"), 'TestJit', 'test_variant_consistency_jit', dtypes=(torch.float32,)),
+               # Difference from <type> is larger with decomposition new_empty_strided.default than original on output 0
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"), 'TestDecomp', 'test_comprehensive'),
            ),
            supports_out=False),
     OpInfo('nn.functional.hardswish',
@@ -15743,6 +15405,48 @@ op_db: List[OpInfo] = [
                             'TestCommon', 'test_complex_half_reference_testing'),
            ),
            supports_autograd=False),
+    OpInfo('new_empty_strided',
+           op=lambda x, *args, **kwargs: x.new_empty_strided(*args, **kwargs),
+           dtypes=all_types_and_complex_and(torch.bool, torch.half, torch.bfloat16, torch.chalf),
+           supports_out=False,
+           sample_inputs_func=partial(sample_inputs_new_fns, is_strided=True),
+           supports_autograd=False,
+           skips=(
+               # FX failed to normalize op
+               DecorateInfo(unittest.expectedFailure, "TestNormalizeOperators", "test_normalize_operator_exhaustive"),
+               # Lazy tensor failures
+               DecorateInfo(unittest.skip("Skipped!"), 'TestLazyOpInfo', 'test_correctness'),
+               DecorateInfo(unittest.skip("Skipped!"), 'TestLazyOpInfo', 'test_correctness_with_reusing_ir'),
+               # Empty tensor data is garbage so it's hard to make comparisons with it.
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestCommon', 'test_variant_consistency_eager'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestCommon', 'test_noncontiguous_samples'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestMathBits', 'test_conj_view'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestMathBits', 'test_neg_view'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestMathBits', 'test_neg_conj_view'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestCommon', 'test_non_standard_bool_values'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestCommon', 'test_complex_half_reference_testing'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestCompositeCompliance', 'test_operator'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestDecomp', 'test_comprehensive'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestDecomp', 'test_quick'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestJit', 'test_variant_consistency_jit'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestProxyTensorOpInfo', 'test_make_fx_exhaustive'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestProxyTensorOpInfo', 'test_make_fx_fake_exhaustive'),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
+                            'TestProxyTensorOpInfo', 'test_make_fx_symbolic_exhaustive'),
+           )),
     OpInfo('empty',
            dtypes=all_types_and_complex_and(torch.bool, torch.half, torch.bfloat16, torch.chalf),
            sample_inputs_func=sample_inputs_empty,
@@ -15781,6 +15485,31 @@ op_db: List[OpInfo] = [
                             'TestLazyOpInfo'),
                DecorateInfo(unittest.skip("Expected: empty is not comparable"),
                             'TestCommon', 'test_complex_half_reference_testing'),
+           )),
+    OpInfo('eye',
+           dtypes=all_types_and_complex_and(torch.bool, torch.half),
+           dtypesIfCUDA=all_types_and_complex_and(torch.bool, torch.half, torch.bfloat16),
+           sample_inputs_func=sample_inputs_eye,
+           error_inputs_func=error_inputs_eye,
+           supports_out=True,
+           supports_autograd=False,
+           skips=(
+               DecorateInfo(unittest.expectedFailure, 'TestNormalizeOperators', 'test_normalize_operator_exhaustive'),
+               # TODO: same as this?
+               # https://github.com/pytorch/pytorch/issues/81774
+               # also see: arange, new_full
+               # fails to match any schemas despite working in the interpreter
+               DecorateInfo(unittest.expectedFailure, 'TestOperatorSignatures', 'test_get_torch_func_signature_exhaustive'),
+               # fails to match any schemas despite working in the interpreter
+               DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
+               # skip these tests since we have non tensor input
+               DecorateInfo(unittest.skip('Skipped!'), "TestCommon", "test_noncontiguous_samples"),
+               DecorateInfo(unittest.skip('Skipped!'), 'TestCommon', 'test_variant_consistency_eager'),
+               DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_conj_view'),
+               DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_neg_conj_view'),
+               DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_neg_view'),
+               # UserWarning not triggered : Resized a non-empty tensor but did not warn about it.
+               DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warning'),
            )),
     OpInfo('new_full',
            op=lambda x, *args, **kwargs: x.new_full(*args, **kwargs),
@@ -18624,6 +18353,7 @@ op_db: List[OpInfo] = [
         supports_autograd=False,
     ),
 ]
+op_db += opinfo.definitions.op_db
 
 class ReductionPythonRefInfo(ReductionOpInfo):
     '''
@@ -18702,30 +18432,6 @@ class ElementwiseBinaryPythonRefInfo(BinaryUfuncInfo):
         ukwargs = _inherit_constructor_args(name, op, inherited, kwargs)
 
         super(ElementwiseBinaryPythonRefInfo, self).__init__(**ukwargs)
-
-class SpectralFuncPythonRefInfo(SpectralFuncInfo):
-    '''
-    An OpInfo for a Python reference of an elementwise unary operation.
-    '''
-    def __init__(
-            self,
-            name,  # the stringname of the callable Python reference
-            *,
-            op=None,  # the function variant of the operation, populated as torch.<name> if None
-            torch_opinfo_name,  # the string name of the corresponding torch opinfo
-            torch_opinfo_variant='',
-            supports_nvfuser=True,
-            **kwargs):  # additional kwargs override kwargs inherited from the torch opinfo
-
-        self.torch_opinfo_name = torch_opinfo_name
-        self.torch_opinfo = _find_referenced_opinfo(torch_opinfo_name, torch_opinfo_variant)
-        self.supports_nvfuser = supports_nvfuser
-        assert isinstance(self.torch_opinfo, SpectralFuncInfo)
-
-        inherited = self.torch_opinfo._original_spectral_func_args
-        ukwargs = _inherit_constructor_args(name, op, inherited, kwargs)
-
-        super().__init__(**ukwargs)
 
 
 # Separate registry for experimental Python Reference OpInfos.
@@ -19171,6 +18877,12 @@ python_ref_db = [
             DecorateInfo(unittest.skip("Skipped!"), 'TestCommon', 'test_python_ref',
                          dtypes=(torch.float32,), device_type='cpu'),
         ),
+    ),
+    PythonRefInfo(
+        "_refs.nn.functional.glu",
+        torch_opinfo_name="nn.functional.glu",
+        supports_nvfuser=False,
+        supports_out=True,
     ),
     PythonRefInfo(
         "_refs.nn.functional.leaky_relu",
@@ -19735,6 +19447,11 @@ python_ref_db = [
         supports_nvfuser=False,
     ),
     PythonRefInfo(
+        "_refs.diag_embed",
+        torch_opinfo_name="diag_embed",
+        supports_nvfuser=False,
+    ),
+    PythonRefInfo(
         "_refs.dstack",
         torch_opinfo_name="dstack",
         supports_nvfuser=False,
@@ -19832,9 +19549,8 @@ python_ref_db = [
             DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_python_ref_meta'),
             # RuntimeError: no _refs support for torch.Tensor.tolist
             DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_python_ref'),
-            # RuntimeError: .tolist() is not supported for tensor subclasses.
-            DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_python_ref_executor'),
-        )
+        ),
+        supports_nvfuser=False,
     ),
     PythonRefInfo(
         "_refs.hsplit",
@@ -20076,6 +19792,17 @@ python_ref_db = [
         ),
     ),
     PythonRefInfo(
+        "_refs.eye",
+        torch_opinfo_name="eye",
+        supports_nvfuser=False,
+        skips=(
+            # skip these tests since we have non tensor input
+            DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_conj_view'),
+            DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_neg_conj_view'),
+            DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_neg_view'),
+        ),
+    ),
+    PythonRefInfo(
         "_refs.new_empty",
         torch_opinfo_name="new_empty",
         supports_nvfuser=False,
@@ -20103,6 +19830,30 @@ python_ref_db = [
                          'test_neg_view'),
             # FIXME: should not compare results of empty_like
             DecorateInfo(unittest.skip("Can't check result for new_empty"), 'TestCommon', 'test_python_ref_executor'),
+        ),
+    ),
+    PythonRefInfo(
+        "_refs.new_empty_strided",
+        torch_opinfo_name="new_empty_strided",
+        skips=(
+            DecorateInfo(unittest.skip("Expected: empty_strided is not comparable"),
+                         'TestCommon',
+                         'test_python_ref'),
+            DecorateInfo(unittest.skip("Expected: empty_strided is not comparable"),
+                         'TestCommon',
+                         'test_python_ref_torch_fallback'),
+            DecorateInfo(unittest.skip("Expected: empty_strided is not comparable"),
+                         'TestMathBits',
+                         'test_conj_view'),
+            DecorateInfo(unittest.skip("Expected: empty_strided is not comparable"),
+                         'TestMathBits',
+                         'test_neg_conj_view'),
+            DecorateInfo(unittest.skip("Expected: empty_strided is not comparable"),
+                         'TestMathBits',
+                         'test_neg_view'),
+            DecorateInfo(unittest.skip("Expected: empty_strided is not comparable"),
+                         'TestCommon',
+                         'test_python_ref_executor'),
         ),
     ),
     PythonRefInfo(
@@ -20142,110 +19893,8 @@ python_ref_db = [
         torch_opinfo_name="allclose",
         supports_nvfuser=False,
     ),
-    #
-    # FFT OpInfos
-    #
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.fft",
-        torch_opinfo_name="fft.fft",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.ifft",
-        torch_opinfo_name="fft.ifft",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.rfft",
-        torch_opinfo_name="fft.rfft",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.irfft",
-        torch_opinfo_name="fft.irfft",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.hfft",
-        torch_opinfo_name="fft.hfft",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.ihfft",
-        torch_opinfo_name="fft.ihfft",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.fftn",
-        torch_opinfo_name="fft.fftn",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.ifftn",
-        torch_opinfo_name="fft.ifftn",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.rfftn",
-        torch_opinfo_name="fft.rfftn",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.irfftn",
-        torch_opinfo_name="fft.irfftn",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.hfftn",
-        torch_opinfo_name="fft.hfftn",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.ihfftn",
-        torch_opinfo_name="fft.ihfftn",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.fft2",
-        torch_opinfo_name="fft.fft2",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.ifft2",
-        torch_opinfo_name="fft.ifft2",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.rfft2",
-        torch_opinfo_name="fft.rfft2",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.irfft2",
-        torch_opinfo_name="fft.irfft2",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.hfft2",
-        torch_opinfo_name="fft.hfft2",
-        supports_nvfuser=False,
-    ),
-    SpectralFuncPythonRefInfo(
-        "_refs.fft.ihfft2",
-        torch_opinfo_name="fft.ihfft2",
-        supports_nvfuser=False,
-    ),
-    PythonRefInfo(
-        "_refs.fft.fftshift",
-        torch_opinfo_name="fft.fftshift",
-        supports_nvfuser=False,
-    ),
-    PythonRefInfo(
-        "_refs.fft.ifftshift",
-        torch_opinfo_name="fft.ifftshift",
-        supports_nvfuser=False,
-    ),
 ]
+python_ref_db += opinfo.definitions.python_ref_db
 
 # Common operator groupings
 ops_and_refs = op_db + python_ref_db

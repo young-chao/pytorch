@@ -3196,6 +3196,7 @@ class TestVmapOperatorsOpInfo(TestCase):
         xfail('nn.functional.dropout3d', ''),  # randomness
         xfail('nn.functional.feature_alpha_dropout', 'with_train'),  # randomness
         xfail('as_strided'),  # as_strided is too crazy
+        xfail('new_empty_strided'),  # empty tensor data is garbage so it's hard to make comparisons with it
         xfail('nn.functional.fractional_max_pool3d'),  # randomness
         xfail('nn.functional.fractional_max_pool2d'),  # randomness
         xfail('pca_lowrank', ''),  # random operation
@@ -3204,6 +3205,7 @@ class TestVmapOperatorsOpInfo(TestCase):
         xfail('arange', ''),  # test runner can't handle factory functions
         xfail('logspace', ''),  # test runner can't handle factory functions
         xfail('empty', ''),  # test runner can't handle factory functions
+        xfail('eye', ''),  # non-tensor input
         xfail('broadcast_shapes', ''),  # test runner can't handle non-Tensor ops
         xfail('sparse.sampled_addmm'),  # sparse
         # ----------------------------------------------------------------------
