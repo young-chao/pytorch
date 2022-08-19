@@ -365,6 +365,25 @@ class _IterDataPipeMeta(_DataPipeMeta):
 
             namespace['reset'] = conditional_reset
 
+        if '__len__' in namespace:
+            len_func = namespace['__len__']
+        else:
+            len_func = None
+
+        def len_hook(*args, **kwargs):
+            datapipe = args[0]
+            if datapipe._length is not None:
+                return datapipe._length
+            else:
+                if len_func is not None:
+                    return len_func(*args, **kwargs)
+                else:
+                    raise TypeError(f"object of type '{datapipe}' has no len(). This is likely because"
+                                    "the length of the DataPipe (or its source DataPipes) cannot be known in advance."
+                                    "Consider manually setting the length with `dp.set_length(length)`.")
+
+        namespace['__len__'] = len_hook
+
         if '__iter__' in namespace:
             hook_iterator(namespace, 'enumerate(DataPipe)#{}'.format(name))
         return super().__new__(cls, name, bases, namespace, **kwargs)  # type: ignore[call-overload]
