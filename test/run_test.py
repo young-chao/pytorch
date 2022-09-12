@@ -285,6 +285,7 @@ CI_SERIAL_LIST = [
     'test_prims',  # slow gradcheck runs a test that checks the cuda memory allocator
 ]
 
+
 # A subset of our TEST list that validates PyTorch's ops, modules, and autograd function as expected
 CORE_TEST_LIST = [
     "test_autograd",
