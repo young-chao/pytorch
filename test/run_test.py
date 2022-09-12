@@ -271,6 +271,7 @@ CI_SERIAL_LIST = [
     'test_cpp_api_parity',
     'test_reductions',
     'test_cuda',
+    'test_jit_cuda_fuser',  # OOM on test_issue_1785, also profiling?
     'test_indexing',
     'test_fx_backends',
     'test_linalg',
@@ -736,7 +737,7 @@ def run_test_ops(test_module, test_directory, options):
         return_code = pool.apply_async(run_test, args=(test_module, test_directory, copy.deepcopy(options)),
                                        kwds={"extra_unittest_args": ["--use-pytest", '-vv', '-x', '--reruns=2', '-rfEX',
                                                                      f'--shard-id={i}', f'--num-shards={num_procs}',
-                                                                     "-k=not _lu_ and not _ldl_solve_ and not _linalg_cholesky_"],
+                                                                     "-k=not _lu_ and not _linalg_cholesky_"],
                                              "log_file": file_path
                                              })
         file_names.append(file_path)
