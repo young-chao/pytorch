@@ -95,8 +95,6 @@ from .composite_compliance import no_dispatch
 
 torch.backends.disable_global_flags()
 
-PYTEST_FILES = []
-
 FILE_SCHEMA = "file://"
 if sys.platform == 'win32':
     FILE_SCHEMA = "file:///"
@@ -908,8 +906,8 @@ TEST_WITH_CROSSREF = os.getenv('PYTORCH_TEST_WITH_CROSSREF', '0') == '1'
 
 
 if TEST_CUDA and 'PARALLEL_TESTING' in os.environ:
-    # we usually run 4 processes and other libraries take up about 11% of space -> .25 - .11 = .14
-    torch.cuda.set_per_process_memory_fraction(0.14)
+    # we usually run 3 processes and other libraries take up about 11% of space -> .33 - .11 = .14
+    torch.cuda.set_per_process_memory_fraction(0.22)
 
 
 def skipIfCrossRef(fn):

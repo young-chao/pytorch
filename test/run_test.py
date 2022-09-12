@@ -269,7 +269,6 @@ CI_SERIAL_LIST = [
     'test_nn',
     'test_fake_tensor',
     'test_cpp_api_parity',
-    'test_jit_cuda_fuser',
     'test_reductions',
     'test_cuda',
     'test_indexing',
@@ -727,7 +726,7 @@ def run_test_ops(test_module, test_directory, options):
 
     file_names = []
     return_codes = []
-    num_procs = 4
+    num_procs = 3
     os.environ["PARALLEL_TESTING"] = "1"
     pool = mp.Pool(num_procs)
     for i in range(num_procs):
