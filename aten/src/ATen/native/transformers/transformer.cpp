@@ -145,9 +145,7 @@ Tensor transformer_encoder_layer_forward(
          false /* need_weights */,
          true /* average_attn_weights */,
          mask_type));
-#if USE_FLASH_ATTENTION
   }
-#endif
   add_in_place(x, src, use_nested_tensor);
   if (!norm_first) {
     x = norm(x, embed_dim, layer_norm_eps, layer_norm_weight_1, layer_norm_bias_1, use_nested_tensor);
