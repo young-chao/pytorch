@@ -26,8 +26,6 @@ using CuBlasPoolType = DeviceThreadHandlePool<cublasHandle_t, createCublasHandle
 } // namespace
 
 cublasHandle_t getCurrentCUDABlasHandle() {
-  c10::cuda::device_synchronize();
-
   int device;
   AT_CUDA_CHECK(cudaGetDevice(&device));
 
