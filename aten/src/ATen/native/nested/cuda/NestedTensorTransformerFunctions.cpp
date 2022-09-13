@@ -13,9 +13,7 @@
 // TODO Consider moving all flash_attention code, nested tensor included to
 // Transformer library
 
-#ifdef USE_FLASH_ATTENTION
 #include <ATen/native/transformers/cuda/flash_attn/fmha_api.h>
-#endif
 
 #include <ATen/native/nested/NestedTensorTransformerFunctions.h>
 #include <ATen/native/nested/NestedTensorMath.h>
@@ -227,7 +225,6 @@ Tensor flash_scaled_dot_product_attention(
     const int64_t max_seqlen_batch_k,
     double dropout_p,
     bool causal) {
-#if defined(USE_FLASH_ATTENTION)
   auto softmax_scale = std::pow(query.size(-1), -0.5);
   std::vector<Tensor> output = fmha::mha_fwd(
       query,
@@ -244,9 +241,6 @@ Tensor flash_scaled_dot_product_attention(
       false,
       c10::nullopt);
   return output[0];
-#endif
-  TORCH_CHECK(false, "USE_FLASH_ATTENTION was not enabled for build.")
-  return Tensor{};
 }
 
 } // namespace native
