@@ -736,7 +736,8 @@ def run_test_ops(test_module, test_directory, options):
                                              prefix=test_module.replace("\\", "-").replace("/", "-"))
         return_code = pool.apply_async(run_test, args=(test_module, test_directory, copy.deepcopy(options)),
                                        kwds={"extra_unittest_args": ["--use-pytest", '-vv', '-x', '--reruns=2', '-rfEX',
-                                                                     f'--shard-id={i}', f'--num-shards={num_procs}'],
+                                                                     f'--shard-id={i}', f'--num-shards={num_procs}',
+                                                                     "-k=not _linalg_cholesky_"],
                                              "log_file": file_path
                                              })
         file_names.append(file_path)
