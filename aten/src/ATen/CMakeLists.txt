@@ -156,12 +156,13 @@ file(GLOB native_transformers_hip_cpp "native/transformers/hip/*.cpp")
 file(GLOB native_quantized_cudnn_hip_cpp "native/quantized/cudnn/hip/*.cpp")
 file(GLOB native_utils_cpp "native/utils/*.cpp")
 
-# flash_attention sources
-file(GLOB flash_attention_cuda_cu "native/transformers/cuda/flash_attn/*.cu")
-file(GLOB flash_attention_cuda_cpp "native/transformers/cuda/flash_attn/*.cpp")
-
-list(APPEND native_transformers_cuda_cu ${flash_attention_cuda_cu})
-list(APPEND native_transformers_cuda_cpp ${flash_attention_cuda_cpp})
+if(USE_CUDA AND NOT USE_ROCM)
+  # flash_attention sources
+  file(GLOB flash_attention_cuda_cu "native/transformers/cuda/flash_attn/*.cu")
+  file(GLOB flash_attention_cuda_cpp "native/transformers/cuda/flash_attn/*.cpp")
+  list(APPEND native_transformers_cuda_cu ${flash_attention_cuda_cu})
+  list(APPEND native_transformers_cuda_cpp ${flash_attention_cuda_cpp})
+endif()
 
 # XNNPACK
 file(GLOB native_xnnpack "native/xnnpack/*.cpp")
