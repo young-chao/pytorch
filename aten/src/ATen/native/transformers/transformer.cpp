@@ -93,7 +93,8 @@ Tensor transformer_encoder_layer_forward(
     const Tensor& ffn_weight_2,
     const Tensor& ffn_bias_2,
     const c10::optional<Tensor>& mask,
-    const c10::optional<int64_t> mask_type) {
+    const c10::optional<int64_t> mask_type,
+    const c10::optional<bool> _use_flash_attention) {
   {
     const Tensor& check_for_empty = src.is_nested() ? get_nested_tensor_impl(src)->get_buffer() : src;
     if (check_for_empty.numel() == 0) {
@@ -107,20 +108,29 @@ Tensor transformer_encoder_layer_forward(
   if (norm_first) {
     x = norm(x, embed_dim, layer_norm_eps, layer_norm_weight_1, layer_norm_bias_1, use_nested_tensor);
   }
+
+  // TODO: This logic will be replaced by a unified ScaledDotProduct
+  bool use_flash_attention = false;
 #if USE_FLASH_ATTENTION
-  if (x.is_nested() && x.is_cuda() && x.dtype() == at::kHalf && !mask.has_value() &&
+  // Use flash attention by default if the user has built PyTorch with USE_FLASH_ATTENTION.
+  use_flash_attention = true;
+#endif
+  if (_use_flash_attention) {
+    // Overwrite the behavior if the user chooses to do so.
+    use_flash_attention = *_use_flash_attention;
+  }
+  if (use_flash_attention && x.is_nested() && x.is_cuda() && x.dtype() == at::kHalf && !mask.has_value() &&
       (embed_dim / num_heads == 16 ||
        embed_dim / num_heads == 32 ||
        embed_dim / num_heads == 64 ||
        embed_dim / num_heads == 128)) {
-     TORCH_WARN_ONCE("USING FLASH ATTENTION WITH NT");
+     TORCH_WARN_ONCE("transformer_encoder_layer_forward is using flash attention.");
      x = at::linear(x, qkv_weight, qkv_bias);
      x = x.view({x.size(0), -1, 3, num_heads, embed_dim / num_heads});
      x = flash_attention_helper(x, x, x, 0.0, false);
      x = x.view({-1, -1, embed_dim});
      x = at::linear(x, proj_weight, proj_bias);
   } else {
-#endif
      x = std::get<0>(native_multi_head_attention(
          x,
          x,

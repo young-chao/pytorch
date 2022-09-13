@@ -429,6 +429,14 @@ class TransformerEncoderLayer(Module):
         else:
             self.activation_relu_or_gelu = 0
         self.activation = activation
+        # Private flag to enable the use of flash attention's
+        # fused scaled dot product kernel at runtime. This is not
+        # meant to be a user facing API and intended to be removed soon.
+        # NOTE: Do not set this to True by default! This is meant to
+        # be a run time flag to experiment with a new, brittle feature.
+        # You can build PyTorch from source with USE_FLASH_ATTENTION=1
+        # if you want this to be True by default.
+        self._use_flash_attention = None
 
     def __setstate__(self, state):
         super(TransformerEncoderLayer, self).__setstate__(state)
@@ -525,6 +533,7 @@ class TransformerEncoderLayer(Module):
                         1 if src_key_padding_mask is not None else
                         0 if src_mask is not None else
                         None,
+                        self._use_flash_attention
                     )
                 elif src_mask is None:
                     # hack until 9/26/2022 for TS jit compatibility window
@@ -548,6 +557,7 @@ class TransformerEncoderLayer(Module):
                         self.linear2.weight,
                         self.linear2.bias,
                         src_mask if src_mask is not None else src_key_padding_mask,
+                        self._use_flash_attention,
                     )
 
         x = src
