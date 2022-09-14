@@ -1568,10 +1568,11 @@ class TestTags(TestCase):
 @skipIfSlowGradcheckEnv
 class TestRefsOpsInfo(TestCase):
 
-    import_paths = ["_refs", "_refs.special", "_refs.nn.functional", "_refs.fft"]
+    import_paths = ["_refs", "_refs.special", "_refs.nn.functional", "_refs.fft", "_refs.linalg"]
     module_alls = [(path, import_module(f"torch.{path}").__all__) for path in import_paths]
     ref_ops_names = tuple(itertools.chain.from_iterable(
         [f"{path}.{op}" for op in module_all] for path, module_all in module_alls))
+    ref_ops_names_set = set(ref_ops_names)
     # 'set' filters out repeated ref names (such as those with variants)
     ref_db_names_set = set(ref_op.name for ref_op in python_ref_db)
     # sort to always use the same order
@@ -1586,6 +1587,8 @@ class TestRefsOpsInfo(TestCase):
         for op in python_ref_db
         for alias in op.torch_opinfo.aliases
     )
+    # sort to always use the same order
+    ref_alias_names = sorted(ref_alias_names_set)
 
     # TODO: References that do not have an entry in python_ref_db
     skip_ref_ops = {
@@ -1613,7 +1616,6 @@ class TestRefsOpsInfo(TestCase):
 
     not_in_decomp_table = {
         # duplicated in _decomp and _refs
-        '_refs.logit',  # already registered by _refs.special.logit
         '_refs.nn.functional.elu',
         '_refs.nn.functional.mse_loss',
         '_refs.var',
@@ -1649,27 +1651,28 @@ class TestRefsOpsInfo(TestCase):
         '_refs.movedim',
         '_refs.narrow',
         '_refs.nn.functional.l1_loss',
-        '_refs.nn.functional.log_softmax',
+        '_refs.nn.functional.layer_norm',
         '_refs.nn.functional.poisson_nll_loss',
-        '_refs.nn.functional.softmax',
         '_refs.nn.functional.softmin',
         '_refs.positive',
         '_refs.ravel',
         '_refs.reshape',
+        '_refs.reshape_as',
         '_refs.softmax',
-        '_refs.special.log_softmax',
-        '_refs.special.softmax',
         '_refs.square',
+        '_refs.std',
         '_refs.tensor_split',
         '_refs.to',
         '_refs.true_divide',
         '_refs.trunc_divide',
+        '_refs.view_as',
         '_refs.vsplit',
         '_refs.vstack',
         '_refs.linalg.matrix_norm',
         '_refs.linalg.norm',
         '_refs.linalg.svd',
         '_refs.linalg.svdvals',
+        '_refs.log_softmax',
         '_refs.unflatten',
         # ref implementation missing kwargs
         '_refs.empty',  # missing "pin_memory"
@@ -1702,6 +1705,16 @@ class TestRefsOpsInfo(TestCase):
             return
         self.assertIn(op, self.ref_db_names_set)
 
+    # like 'test_refs_are_in_python_ref_db' but check in the other direction,
+    # this includes aliases since those are not allowed in 'ref_db_names'
+    @parametrize("op", itertools.chain(ref_db_names, ref_alias_names))
+    def test_python_refs_are_in_ops_names(self, op):
+        # TODO: skip nvfuser refs since those don't have __all__ and it's not
+        # clear at the moment what would be the best way to check those
+        if op.startswith("ops.nvprims"):
+            return
+        self.assertIn(op, self.ref_ops_names_set)
+
     @parametrize("op", ref_db_names)
     def test_ref_db_has_no_aliases(self, op):
         self.assertTrue(op not in self.ref_alias_names_set,
@@ -1710,6 +1723,13 @@ class TestRefsOpsInfo(TestCase):
 
     @parametrize("op", ref_ops_names)
     def test_refs_are_in_decomp_table(self, op):
+        # skip aliases since those will be registered via their respective ops
+        if op in self.ref_alias_names_set:
+            # also make sure aliases are not added to the list of decomp skips
+            self.assertTrue(op not in self.not_in_decomp_table,
+                            f"Alias {op} in not_in_decomp_table, which is not "
+                            f"allowed, aliases must never register decomps")
+            return
         path = op.split('.')
         module_path = '.'.join(path[:-1])
         op_name = path[-1]

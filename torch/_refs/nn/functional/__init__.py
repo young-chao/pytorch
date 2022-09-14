@@ -32,6 +32,8 @@ __all__ = [
     "hardtanh",
     "hinge_embedding_loss",
     "l1_loss",
+    "layer_norm",
+    "leaky_relu",
     "log_softmax",
     "margin_ranking_loss",
     "mish",
@@ -41,12 +43,15 @@ __all__ = [
     "relu",
     "relu6",
     "selu",
+    "sigmoid",
     "softmax",
     "softmin",
     "softplus",
     "softshrink",
+    "tanh",
     "tanhshrink",
     "threshold",
+    "gelu",
     "glu",
     "pairwise_distance",
     "pdist",
@@ -234,6 +239,9 @@ def selu(a: TensorLikeType, inplace: bool = False) -> TensorLikeType:
     rhs = alpha * torch.expm1(a)
 
     return scale * torch.where(a > 0, a, rhs)
+
+
+sigmoid = torch.sigmoid  # alias
 
 
 # CompositeImplicitAutograd - don't register decomp
@@ -465,6 +473,9 @@ def hinge_embedding_loss(
     output_self = refs.where(refs.ne(target, -1), input, 0)
     loss = refs.add(output_margin, output_self)
     return _apply_loss_reduction(loss, reduction)
+
+
+tanh = torch.tanh  # alias
 
 
 # tanhshrink does not use _make_elementwise_unary_reference because it does not support out
