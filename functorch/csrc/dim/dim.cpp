@@ -1500,9 +1500,19 @@ static PyObject* _dims(PyObject *self,
     }
 
     PyThreadState* state = PyThreadState_GET();
-    PyFrameObject* f = state->frame;
-    auto code = (_Py_CODEUNIT*)PyBytes_AS_STRING(f->f_code->co_code);
 #if PY_VERSION_HEX >= 0x030a00f0
+    PyFrameObject* f = PyThreadState_GetFrame(state);
+#else
+    PyFrameObject* f = state->frame;
+#endif
+#if PY_VERSION_HEX >= 0x030b0000
+    auto code = _PyCode_CODE(PyFrame_GetCode(f));
+#else
+    auto code = (_Py_CODEUNIT*)PyBytes_AS_STRING(PyFrame_GetCode(f)->co_code);
+#endif
+#if PY_VERSION_HEX >= 0x030b0000
+    int first = PyFrame_GetLasti(f) + 1;
+#elif PY_VERSION_HEX >= 0x030a00f0
     int first = f->f_lasti + 1;
 #else
     int first = f->f_lasti /  2 + 1;
@@ -1529,7 +1539,7 @@ static PyObject* _dims(PyObject *self,
     auto genobject = [&](int i) -> py::object {
         py::object name;
         if (i < found_ndims) {
-            name = getname(f->f_code, code[names_start + i]);
+            name = getname(PyFrame_GetCode(f), code[names_start + i]);
         }
         if (!name.ptr()) {
             name = py::unicode_from_format("d%d", i);
