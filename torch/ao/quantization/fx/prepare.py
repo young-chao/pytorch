@@ -69,6 +69,7 @@ from .match_utils import (
 
 from ..utils import _parent_name
 from .utils import (
+    _is_custom_module_lstm,
     get_custom_module_class_keys,
     all_node_args_have_no_tensors,
     assert_and_get_unique_device,
@@ -770,8 +771,13 @@ def maybe_insert_output_observer_for_node(
                 matched_pattern,
                 is_qat)
         observer = act_post_process_ctr()
-        new_obs = insert_observer(node, observer, model, modules, graph)
-        return new_obs
+
+        # The outputs of custom module LSTM are already observed through internal ops,
+        # so we don't need to observe the output tuple again
+        if _is_custom_module_lstm(node, modules):
+            return None
+        else:
+            return insert_observer(node, observer, model, modules, graph)
     else:
         return None
 
@@ -1287,6 +1293,7 @@ def insert_observers_for_model(
                                 if not maybe_make_input_output_share_observers(node, model, modules):
                                     remove_output_observer(node, model, modules)
 
+                        if maybe_output_obs_node is not None or _is_custom_module_lstm(node, modules):
                             if qhandler is not None and qhandler.is_custom_module():
                                 swap_custom_module_to_observed(node, qconfig, modules, prepare_custom_config)
 
