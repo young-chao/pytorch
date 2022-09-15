@@ -370,13 +370,15 @@ def run_test(
     extra_unittest_args=None,
     env=None,
 ) -> int:
-    unittest_args = options.additional_unittest_args.copy()
-    unittest_args.extend(extra_unittest_args or [])
+    unittest_args = []
     if test_module not in PYTEST_INCOMPATIBLE:
         which_shard, num_shards = options.shard or (1, 1)
         subprocess.run(["python", "-m", "pip", "install", "pytest-shard"])
         unittest_args.extend(["--use-pytest", '-vv', '-x', '--reruns=2', '-rfEX',
                               f'--shard-id={which_shard - 1}', f'--num-shards={num_shards}'])
+    # put these afterwards so that anything specified by the user comes after the defaults so they take precedence
+    unittest_args.extend(extra_unittest_args or [])
+    unittest_args.extend(options.additional_unittest_args)
 
     if IS_CI:
         # use the downloaded test cases configuration, not supported in pytest
@@ -682,11 +684,13 @@ def run_test_ops(test_module, test_directory, options):
 
     return_codes = []
     os.environ["PARALLEL_TESTING"] = "1"
+    which_shard, num_shards = options.shard or (1, 1)
+
     pool = Pool(NUM_PROCS)
     for i in range(NUM_PROCS):
         return_code = pool.apply_async(run_test, args=(test_module, test_directory, copy.deepcopy(options)),
-                                       kwds={"extra_unittest_args": ["--use-pytest", '-vv', '-x', '--reruns=2', '-rfEX',
-                                                                     f'--shard-id={i}', f'--num-shards={NUM_PROCS}',
+                                       kwds={"extra_unittest_args": [f'--shard-id={NUM_PROCS * (which_shard - 1) + i}',
+                                                                     f'--num-shards={NUM_PROCS * num_shards}',
                                                                      "-k=not _linalg_cholesky_"],
                                              })
         return_codes.append(return_code)
@@ -698,8 +702,7 @@ def run_test_ops(test_module, test_directory, options):
         if return_code.get() != 0:
             return return_code.get()
     return_code = run_test(test_module, test_directory, copy.deepcopy(options),
-                           extra_unittest_args=["--use-pytest", '-vv', '-x', '--reruns=2', '-rfEX',
-                                                "-k=_linalg_cholesky_"],
+                           extra_unittest_args=["-k=_linalg_cholesky_"],
                            )
     return return_code
 
