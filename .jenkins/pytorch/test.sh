@@ -202,6 +202,7 @@ test_dynamo_shard() {
       test_package \
       test_vmap \
     --shard "$1" "$NUM_TEST_SHARDS" \
+    --continue-through-error \
     --verbose
   assert_git_not_dirty
 }
@@ -695,6 +696,7 @@ elif [[ "${TEST_CONFIG}" == *functorch* ]]; then
 else
   install_torchvision
   install_torchdynamo
+  install_jinja2
   install_monkeytype
   test_python
   test_aten
