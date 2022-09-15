@@ -647,8 +647,8 @@ def get_report_path(pytest=False):
     test_report_path = os.path.join(test_report_path, test_filename)
     if pytest:
         test_report_path = test_report_path.replace('python-unittest', 'python-pytest')
-        os.makedirs(test_report_path, exist_ok=True)
         test_report_path = os.path.join(test_report_path, f"{test_filename}-{os.urandom(8).hex()}.xml")
+        os.makedirs(Path(test_report_path).parent, exist_ok=True)
         return test_report_path
     os.makedirs(test_report_path, exist_ok=True)
     return test_report_path
@@ -660,12 +660,9 @@ def sanitize_pytest_xml(xml_file: str):
     import xml.etree.ElementTree as ET
     tree = ET.parse(xml_file)
     for testcase in tree.iter('testcase'):
-        full_classname = testcase.attrib['classname']
-        regex_result = re.search(r"^test\.(.*)\.([^\.]*)$", full_classname)
-        classname = regex_result.group(2)
-        file = regex_result.group(1).replace('.', "/")
+        classname = testcase.attrib['classname'].split(".")[-1]
         testcase.set('classname', classname)
-        testcase.set('file', f"{file}.py")
+        testcase.set('file', inspect.getfile(sys._getframe(2)))
     tree.write(xml_file)
 
 def run_tests(argv=UNITTEST_ARGS):
@@ -707,6 +704,9 @@ def run_tests(argv=UNITTEST_ARGS):
                 other_args.append('--import-disabled-tests')
             if SLOW_TESTS_FILE:
                 other_args.append('--import-slow-tests')
+            if USE_PYTEST:
+                other_args.append('--use-pytest')
+                test_case_full_name = f"-k={test_case_full_name.split('.')[1]}"
             cmd = [sys.executable] + [argv[0]] + other_args + argv[1:] + [test_case_full_name]
             string_cmd = " ".join(cmd)
             exitcode = shell(cmd)
@@ -1849,6 +1849,10 @@ def set_warn_always_context(new_val: bool):
         yield
     finally:
         torch.set_warn_always(old_val)
+
+
+class NoTest():
+    __test__ = False
 
 
 class TestCase(expecttest.TestCase):
