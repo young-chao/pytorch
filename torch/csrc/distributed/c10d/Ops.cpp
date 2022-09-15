@@ -7,24 +7,6 @@
 namespace c10d {
 namespace {
 
-std::tuple<std::vector<std::vector<at::Tensor>>, c10::intrusive_ptr<Work>>
-allgather_(
-    const std::vector<std::vector<at::Tensor>>& output_tensors,
-    const std::vector<at::Tensor>& input_tensors,
-    const c10::intrusive_ptr<ProcessGroup>& process_group,
-    int64_t timeout) {
-  auto work = process_group->allgather(
-      const_cast<std::vector<std::vector<at::Tensor>>&>(output_tensors),
-      const_cast<std::vector<at::Tensor>&>(input_tensors),
-      AllgatherOptions{std::chrono::milliseconds(timeout)});
-
-  // Copy output tensors (not storage) so that this can be used in a functional
-  // manner
-  return std::
-      tuple<std::vector<std::vector<at::Tensor>>, c10::intrusive_ptr<Work>>(
-          output_tensors, work);
-}
-
 std::tuple<std::vector<at::Tensor>, c10::intrusive_ptr<Work>> reduce_scatter_(
     const std::vector<at::Tensor>& output_tensors,
     const std::vector<std::vector<at::Tensor>>& input_tensors,
@@ -106,8 +88,7 @@ TORCH_LIBRARY(c10d, m) {
   m.def(
       "allreduce_(Tensor[] tensors, __torch__.torch.classes.c10d.ProcessGroup process_group, __torch__.torch.classes.c10d.ReduceOp reduce_op, int timeout) -> (Tensor[], __torch__.torch.classes.c10d.Work)");
   m.def(
-      "allgather_",
-      dispatch(c10::DispatchKey::CompositeExplicitAutograd, allgather_));
+      "allgather_(Tensor[][] output_tensors, Tensor[] input_tensors, __torch__.torch.classes.c10d.ProcessGroup process_group, int timeout) -> (Tensor[][], __torch__.torch.classes.c10d.Work)");
   m.def(
       "reduce_scatter_",
       dispatch(c10::DispatchKey::CompositeExplicitAutograd, reduce_scatter_));

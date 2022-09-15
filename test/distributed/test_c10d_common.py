@@ -1374,7 +1374,11 @@ class ProcessGroupWithDispatchedCollectivesTests(MultiProcessTestCase):
         nonsupported_device = torch.device("meta")
         tensor = torch.zeros(2, 2, device=nonsupported_device)
         with self.assertRaisesRegex(NotImplementedError, "Could not run .* with arguments from the 'AutogradMeta' backend."):
-            collective(tensor, *args)
+            # multi tensor collectives
+            if collective == dist.all_gather:
+                collective([tensor], tensor, *args)
+            else:
+                collective(tensor, *args)
 
     # TODO: backend will be replaced with a non specified backend
     def _test_collectives(self, backend):
@@ -1390,7 +1394,7 @@ class ProcessGroupWithDispatchedCollectivesTests(MultiProcessTestCase):
             (dist.recv, self.rank),
             (dist.reduce, self.rank),
             (dist.broadcast, self.rank),
-            (dist.all_reduce,)
+            (dist.all_gather,)
         ]
         for collective, *args in collectives_and_args:
             with self.subTest(collective=collective, args=args):
