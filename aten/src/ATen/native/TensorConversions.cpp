@@ -992,6 +992,62 @@ Tensor dense_to_sparse_bsc(const Tensor& self, IntArrayRef blocksize) {
       values.device());
 }
 
+Tensor sparse_compressed_clone(const Tensor& self) {
+  // Just returning self doesn't work
+  // RuntimeError: t.use_count() <= 1 INTERNAL ASSERT FAILED at
+  // "../torch/csrc/autograd/autograd_not_implemented_fallback.cpp":152,
+  // please report a bug to PyTorch.
+  const auto layout = self.layout();
+  Tensor compressed_indices, plain_indices;
+  std::tie(compressed_indices, plain_indices) = at::sparse_csr::getCompressedPlainIndices(self);
+  auto values = self.values();
+  return _sparse_compressed_tensor_unsafe(
+      compressed_indices,
+      plain_indices,
+      values,
+      self.sizes(),
+      values.scalar_type(),
+      layout,
+      values.device());
+}
+
+Tensor sparse_compressed_to_flipped(const Tensor& self, const std::string& name) {
+  const auto layout = self.layout();
+  const auto flipped_layout = at::sparse_csr::flip_compressed_layout(layout);
+  const auto sizes = at::DimVector(self.sizes());
+  const auto transposed_sizes = at::DimVector({sizes[1], sizes[0]});
+
+  Tensor compressed_indices, plain_indices;
+  std::tie(compressed_indices, plain_indices) = at::sparse_csr::getCompressedPlainIndices(self);
+  auto values = self.values();
+
+  const auto is_out_int32 = compressed_indices.scalar_type() == ScalarType::Int;
+  const auto is_transposed_indices = layout == at::kSparseCsc || layout == at::kSparseBsc;
+  auto coo_indices = _convert_indices_from_csr_to_coo(
+      compressed_indices, plain_indices, is_out_int32, true);
+  const auto coo_indices_hashed = at::sparse::flatten_indices(coo_indices,
+      is_transposed_indices ? sizes : transposed_sizes);
+  const auto hash_argsort = std::get<1>(coo_indices_hashed.sort());
+  const auto coo_indices_sorted = coo_indices.index_select(1, hash_argsort);
+
+  const auto new_plain_indices = coo_indices_sorted.select(0, 1);
+  const auto new_compressed_indices_coo_format = coo_indices_sorted.select(0, 0);
+  const auto new_values = values.index_select(0, hash_argsort);
+  const auto new_compressed_indices = _convert_indices_from_coo_to_csr(
+      new_compressed_indices_coo_format,
+      is_transposed_indices ? sizes[0] : transposed_sizes[0],
+      is_out_int32);
+
+  return _sparse_compressed_tensor_unsafe(
+      new_compressed_indices,
+      new_plain_indices,
+      new_values,
+      sizes,
+      new_values.scalar_type(),
+      flipped_layout,
+      new_values.device());
+}
+
 Tensor sparse_compressed_to_sparse_csr(const Tensor& self) {
   if (self.layout() == kSparseCsc) {
     TORCH_CHECK(
@@ -999,52 +1055,10 @@ Tensor sparse_compressed_to_sparse_csr(const Tensor& self) {
         "Expected self to be of dimension 2, but got ",
         self.dim(),
         ".");
-    auto sizes = self.sizes();
-    auto ccol_indices = self.ccol_indices();
-    auto row_indices = self.row_indices();
-    auto values = self.values();
-
-    // convert CSC indices to COO indices and swap its rows
-    const bool out_int32 = ccol_indices.scalar_type() == ScalarType::Int;
-    Tensor indices_transposed = _convert_indices_from_csr_to_coo(
-        ccol_indices, row_indices, out_int32, true);
-
-    // sort transposed indices
-    auto indices_scalar =
-        at::sparse::flatten_indices(indices_transposed, {sizes[0], sizes[1]});
-    auto indicesPermutation = std::get<1>(indices_scalar.sort(0));
-    auto indices_transposed_sorted =
-        indices_transposed.index_select(1, indicesPermutation);
-
-    // construct a CSR tensor
-    auto new_row_indices = indices_transposed_sorted.select(0, 0);
-    auto new_col_indices = indices_transposed_sorted.select(0, 1);
-    auto new_values = values.index_select(0, indicesPermutation);
-    Tensor new_crow_indices =
-        _convert_indices_from_coo_to_csr(new_row_indices, sizes[0], out_int32);
-
-    return _sparse_csr_tensor_unsafe(
-        new_crow_indices,
-        new_col_indices,
-        new_values,
-        {sizes[0], sizes[1]},
-        new_values.scalar_type(),
-        c10::kSparseCsr,
-        new_values.device());
+    return sparse_compressed_to_flipped(self, "to_sparse_csr");
   }
   if (self.layout() == kSparseCsr) {
-    // Just returning self doesn't work
-    // RuntimeError: t.use_count() <= 1 INTERNAL ASSERT FAILED at
-    // "../torch/csrc/autograd/autograd_not_implemented_fallback.cpp":152,
-    // please report a bug to PyTorch. aten::to_sparse_csr
-    return at::native::_sparse_csr_tensor_unsafe(
-        self.crow_indices(),
-        self.col_indices(),
-        self.values(),
-        self.sizes(),
-        self.scalar_type(),
-        c10::kSparseCsr,
-        self.device());
+    return sparse_compressed_clone(self);
   }
   AT_ERROR(
       "sparse_compressed_to_sparse_csr expected SparseCsr or SparseCsc layout but got ",
@@ -1421,19 +1435,20 @@ Tensor sparse_compressed_to_sparse_bsc(const Tensor& self, IntArrayRef blocksize
 }
 
 Tensor sparse_compressed_to_sparse_csc(const Tensor& self) {
+  if (self.layout() == kSparseCsr) {
+    TORCH_CHECK(
+        self.dim() == 2,
+        "Expected self to be of dimension 2, but got ",
+        self.dim(),
+        ".");
+    return sparse_compressed_to_flipped(self, "to_sparse_csc");
+  }
   if (self.layout() == kSparseCsc) {
-    // Based on to_sparse_csr just returning self doesn't work
-    return _sparse_csc_tensor_unsafe(
-        self.ccol_indices(),
-        self.row_indices(),
-        self.values(),
-        self.sizes(),
-        self.scalar_type(),
-        c10::kSparseCsc,
-        self.device());
+    return sparse_compressed_clone(self);
   }
   AT_ERROR(
-      "Conversion from ", self.layout(), " to SparseCsc is currently not supported.");
+      "sparse_compressed_to_sparse_csc expected SparseCsr or SparseCsc layout but got ",
+      self.layout());
 }
 
 Tensor sparse_compressed_to_sparse(const Tensor& self, int64_t sparse_dim) {
