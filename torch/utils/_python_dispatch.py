@@ -1,11 +1,10 @@
 import contextlib
-from typing import Iterator, Set
-import functools
 
 import warnings
-from torch.utils._mode_utils import _enable_mode, _ModeInfo, _restore_mode
+from torch.utils._mode_utils import _ModeInfo
 from torch._C import _get_torch_dispatch_mode, _set_torch_dispatch_mode
 from dataclasses import dataclass
+import threading
 
 
 @dataclass
@@ -25,54 +24,6 @@ class TorchDispatchModeInfo(_ModeInfo):
 #   is able to selectively disable __torch_dispatch__ of a particular class.
 # - It doesn't work with the tensor constructors (torch.tensor, torch.Tensor)
 # - Better name (see https://github.com/pytorch/pytorch/pull/63496#discussion_r694091694)
-@contextlib.contextmanager
-def enable_torch_dispatch_mode(mode, *, replace=None, ignore_preexisting=False) -> Iterator[None]:
-    """
-    Context manager that causes all pytorch operators to dispatch to the passed-in
-    type's __torch_dispatch__ function, including operations that accept no tensors
-    but return a tensor.
-
-    This function is non-compositional; if there is already an existing mode,
-    it will raise an error
-
-    This function is safe to use inside a ``__torch_dispatch__`` mode handler,
-    as the mode is guaranteed to be disabled in this context.  You can use
-    this context manager to reinstate the mode so that calls to overridable
-    APIs recursively call back into your mode handler (this can easily cause
-    infinite loops, so use with care!)
-
-    enable_torch_dispatch_mode is affected by _DisableTorchDispatch.
-
-    Args:
-        mode (:class:`TorchDispatchMode`, Tensor-like class, or None): the
-            mode to set as current mode.  If you pass a Tensor-like class,
-            it will be treated as a non-compositional mode with no state,
-            which is convenient if you have an existing tensor subclass
-            that you'd like to apply globally in a quick and dirty way.
-            Passing None will disable the current mode.
-        replace (:class:`TorchDispatchMode` or Tensor-like class): the
-            mode to replace.  You can use this argument to change the mode in
-            a situation where you know what the current mode is (and you are
-            intentionally overwriting it.)  If you don't know what the current
-            mode is, use ``ignore_preexisting`` instead.
-        ignore_preexisting (bool): if True, ignore any preexisting mode
-            and overwrite it with the passed mode.
-    """
-
-    return _enable_mode(mode, mode_info=TorchDispatchModeInfo(), replace=replace, ignore_preexisting=ignore_preexisting)
-
-
-def _wrap_torch_dispatch(f):
-    @functools.wraps(f)
-    def wrapped(self, *args, **kwargs):
-        if isinstance(f, classmethod):
-            raise RuntimeError("TorchDispatchMode's torch_dispatch function " +
-                               "should be a normal method not a class method")
-        inner = getattr(self, "inner", None)
-
-        with enable_torch_dispatch_mode(inner):
-            return f(self, *args, **kwargs)
-    return wrapped
 
 
 # Implementation note, since this is based on TorchFunctionMode, this had the
@@ -86,30 +37,8 @@ def _wrap_torch_dispatch(f):
 # have the bulk of the logic for managing the stack in Python, which helped
 # simplify the C++ API surface.  It would also have been valid to build in the
 # notion of mode stack directly into C++ but in this design it's substantially
-# more difficult to interact with TorchDispatchModeMeta.
-
-class TorchDispatchModeMeta(type):
-    """
-    Metaclass for :class:`TorchDispatchMode`; it does two things:
-
-        * Adds an implicit ``inner`` kwarg to ``__init__``, to
-          allow the modes to be chained together to form a stack.
-
-        * Reenables the inner mode, so that by default PyTorch API calls
-          will compositionally proceed to the next mode on the stack.
-
-    The default behavior for the second bullet is important, as it is easy to
-    accidentally write ``_wrap_torch_dispatch`` implementations that are not
-    compositional, and the wrapping here makes the obvious code do the
-    right thing (aka, this is why there is a metaclass).
-    """
-    def __new__(metacls, name, bases, dct):
-        if '__torch_dispatch__' in dct:
-            dct['__torch_dispatch__'] = _wrap_torch_dispatch(dct['__torch_dispatch__'])
-        return super().__new__(metacls, name, bases, dct)
-
-
-class TorchDispatchMode(metaclass=TorchDispatchModeMeta):
+# more difficult to interact with it.
+class TorchDispatchMode:
     """
     A ``TorchDispatchMode`` allows you to override the meaning of all
     ``__torch_dispatch__`` overrideable functions within a dynamic scope,
@@ -139,32 +68,15 @@ class TorchDispatchMode(metaclass=TorchDispatchModeMeta):
     ``__torch_dispatch__(self)`` to make PyTorch
     API self-referential (beware of infinite loops, in this case!)
     """
-    # Force metaclass to generate constructor at the base of the hierarchy
-    def __init__(self):
-        self.ancestors: Set[TorchDispatchMode]
-
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         raise NotImplementedError()
 
     def __enter__(self):
-        old = _get_torch_dispatch_mode()
-        if hasattr(self, "inner"):
-            raise RuntimeError(f"{self} has already been used as a mode. Please use a fresh version or use restore")
-        else:
-            self.inner = old
-            if old is None:
-                self.ancestors = set()
-            else:
-                self.ancestors = self.inner.ancestors.union({self.inner})
-        _set_torch_dispatch_mode(self)
+        _push_mode(self)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        _set_torch_dispatch_mode(self.inner)
-
-    @contextlib.contextmanager
-    def restore(self):
-        return _restore_mode(self, mode_info=TorchDispatchModeInfo())
+        _pop_mode()
 
     @classmethod
     def push(cls, *args, **kwargs):
@@ -172,6 +84,56 @@ class TorchDispatchMode(metaclass=TorchDispatchModeMeta):
         instance = cls(*args, **kwargs)
         return instance
 
+
+# WARNING: If you access this list to see all the active modes in order, do not update the list in place
+# since it alters the actual mode stack
+threadLocal = threading.local()
+def _get_cur_mode_stack():
+    mode_stack = getattr(threadLocal, 'dispatch_mode_stack', None)
+    if not mode_stack:
+        mode_stack = []
+        threadLocal.dispatch_mode_stack = mode_stack
+    return mode_stack
+
+
+def get_current_dispatch_mode():
+    return _get_cur_mode_stack()[-1] if len(_get_cur_mode_stack()) > 0 else None
+
+
+def _push_mode(mode):
+    if len(_get_cur_mode_stack()) == 0:
+        _set_torch_dispatch_mode(_TorchDispatchStackMode())
+    _get_cur_mode_stack().append(mode)
+
+
+def _pop_mode():
+    assert len(_get_cur_mode_stack()) > 0
+    old = _get_cur_mode_stack().pop()
+    if len(_get_cur_mode_stack()) == 0:
+        _set_torch_dispatch_mode(None)
+    return old
+
+
+@contextlib.contextmanager
+def _pop_mode_temporarily():
+    old = _pop_mode()
+    try:
+        yield old
+    finally:
+        _push_mode(old)
+
+# a helper "mode" used by the torch dispatch push helper method. This is the only mode that will ever
+# be active at the C++ level and it will run the current mode
+class _TorchDispatchStackMode:
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        with _pop_mode_temporarily() as old:
+            if len(_get_cur_mode_stack()) > 0:
+                _set_torch_dispatch_mode(self)
+            # we can't check the type of __torch_dispatch__ here but this is sufficient for checking it's a classmethod
+            if old.__torch_dispatch__.__self__ is type(old):
+                raise RuntimeError(f"{type(old)}'s torch_dispatch function " +
+                                   "should be a normal method not a class method")
+            return old.__torch_dispatch__(func, types, args, kwargs)
 
 class BaseTorchDispatchMode(TorchDispatchMode):
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
