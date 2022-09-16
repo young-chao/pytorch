@@ -146,20 +146,17 @@ def backward(
         See https://github.com/pytorch/pytorch/pull/60521#issuecomment-867061780 for more details.
 
     Args:
-        tensors (Sequence[Tensor] or Tensor): Tensors of which the derivative will be
-            computed.
+        tensors (Sequence[Tensor] or Tensor): 要计算梯度的tensors.
         grad_tensors (Sequence[Tensor or None] or Tensor, optional): The "vector" in
             the Jacobian-vector product, usually gradients w.r.t. each element of
             corresponding tensors. None values can be specified for scalar Tensors or
             ones that don't require grad. If a None value would be acceptable for all
             grad_tensors, then this argument is optional.
-        retain_graph (bool, optional): If ``False``, the graph used to compute the grad
-            will be freed. Note that in nearly all cases setting this option to ``True``
-            is not needed and often can be worked around in a much more efficient
-            way. Defaults to the value of ``create_graph``.
-        create_graph (bool, optional): If ``True``, graph of the derivative will
-            be constructed, allowing to compute higher order derivative products.
-            Defaults to ``False``.
+        retain_graph (bool, optional): 如果 ``False``，用于计算 grad 的图将被释放.
+        请注意，几乎在所有情况下都不需要将此选项设置为“True”，并且通常可以以更有效的方式解决.
+        默认为“create_graph”的值.
+        create_graph (bool, optional): 如果为``True``, 将构建导数图，允许计算高阶导数. 
+        默认为``False``.
         inputs (Sequence[Tensor] or Tensor, optional): Inputs w.r.t. which the gradient
             be will accumulated into ``.grad``. All other Tensors will be ignored. If
             not provided, the gradient is accumulated into all the leaf Tensors that
