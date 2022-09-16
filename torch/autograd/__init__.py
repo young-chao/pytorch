@@ -1,7 +1,7 @@
 """
 ``torch.autograd`` 提供了实现任意标量值函数的自动微分的类和函数。 它只需要对现有代码进行最少的更改。
 您只需要对计算梯度的 Tensor声明 ``requires_grad=True`` 。 
-截至目前，我们只支持浮点类型（half、float、double 和 bfloat16）和复杂类型（cfloat、cdouble）的 autograd。
+截至目前，我们只支持class:`Tensor` types (half, float, double and bfloat16)和 class:`Tensor` types (cfloat, cdouble)的 autograd。
 """
 import torch
 import warnings
