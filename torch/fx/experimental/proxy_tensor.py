@@ -21,7 +21,6 @@ import weakref
 from torch.utils._python_dispatch import TorchDispatchMode, enable_torch_dispatch_mode
 from torch._subclasses import FakeTensor
 from .symbolic_shapes import ShapeEnv, SymDispatchMode, PySymInt, PySymFloat
-import torch.fx.experimental.symbolic_shapes as symbolic_shapes
 from torch.fx import Proxy
 
 __all__ = ["PythonKeyTracer", "dispatch_trace", "make_fx", "DecompositionInterpreter", "get_proxy", "has_proxy"]
@@ -433,10 +432,6 @@ class ProxyTorchDispatchMode(TorchDispatchMode):
     def inner_torch_dispatch(self, func, types, args=(), kwargs=None):
         if not self.enable_tracing:
             return func(*args, **kwargs)
-
-        if symbolic_shapes.is_symbolic_op(func):
-            with self.restore():
-                return symbolic_shapes.handle_symbolic_op(func, args, kwargs)
 
         if func in [prim.device.default]:
             return func(*args, **kwargs)
