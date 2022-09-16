@@ -177,7 +177,7 @@ PyObject* THPEngine_run_backward(
   PyObject* inputs = nullptr;
   unsigned char allow_unreachable = 0;
   unsigned char accumulate_grad =
-      0; // Indicate whether to accumulate grad into leaf Tensors or capture
+      0; // 指示是否将 grad 累积到叶张量中或捕获
   const char* accepted_kwargs[] = {// NOLINT
                                    "tensors",
                                    "grad_tensors",
