@@ -1,0 +1,13 @@
+"""
+${generated_comment}
+"""
+
+# flake8: noqa
+from torch.onnx import diagnostic
+
+
+class _Rules:
+${rules}
+
+
+rules = _Rules()
