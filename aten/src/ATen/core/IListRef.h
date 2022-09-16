@@ -313,7 +313,10 @@ using _MaterializedIListRefElem = typename std::conditional<
     T>::type;
 
 template <typename T>
-using MaterializedIListRef = std::vector<_MaterializedIListRefElem<IListRefConstRef<T>>>;
+using MaterializedIListRefElem = _MaterializedIListRefElem<IListRefConstRef<T>>;
+
+template <typename T>
+using MaterializedIListRef = std::vector<MaterializedIListRefElem<T>>;
 
 } // namespace detail
 
@@ -504,6 +507,7 @@ class IListRef {
 
   using iterator = IListRefIterator<T>;
   using const_iterator = IListRefIterator<T>;
+  using reverse_iterator = std::reverse_iterator<iterator>;
   using value_type = typename iterator::value_type;
 
   IListRef() : tag_(IListRefTag::None) {}
@@ -546,6 +550,14 @@ class IListRef {
 
   iterator end() const {
     TORCH_ILISTREF_UNWRAP(tag_, { return this_.end(); });
+  }
+
+  reverse_iterator rbegin() const {
+    TORCH_ILISTREF_UNWRAP(tag_, { return this_.rbegin(); });
+  }
+
+  reverse_iterator rend() const {
+    TORCH_ILISTREF_UNWRAP(tag_, { return this_.rend(); });
   }
 
   detail::IListRefConstRef<T> front() const {
