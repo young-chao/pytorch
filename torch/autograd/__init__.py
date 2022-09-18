@@ -105,8 +105,7 @@ def backward(
     grad_variables: Optional[_TensorOrTensors] = None,
     inputs: Optional[_TensorOrTensors] = None,
 ) -> None:
-    r"""Computes the sum of gradients of given tensors with respect to graph
-    leaves.
+    r"""计算给定张量相对于图中叶子节点变量的梯度总和.
 
     The graph is differentiated using the chain rule. If any of ``tensors``
     are non-scalar (i.e. their data has more than one element) and require
@@ -196,7 +195,7 @@ def grad(
     allow_unused: bool = False,
     is_grads_batched: bool = False
 ) -> Tuple[torch.Tensor, ...]:
-    r"""计算并返回输出相对于输入的梯度.
+    r"""计算并返回输出相对于输入的梯度总和.
 
     ``grad_outputs`` should be a sequence of length matching ``output``
     containing the "vector" in vector-Jacobian product, usually the pre-computed
