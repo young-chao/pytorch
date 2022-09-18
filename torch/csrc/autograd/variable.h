@@ -91,7 +91,7 @@ struct Node;
 将变量连接到梯度函数的特定输入，该梯度函数将在反向传播期间被调用。 
 更准确地说，这个梯度函数可以是以下两种情况之一： 
 1.`grad_fn`，如果变量在图的内部。 这是产生变量的函数的梯度。 
-2.`grad_accumulator`，如果变量是一个叶子，它将一个标量梯度值累积到它的`grad`变量中。
+2.`grad_accumulator`，如果变量是一个叶子节点，它将一个标量梯度值累加到它的`grad`变量中。
 */
 /// Furthermore, `Variable`s have the notion of a `gradient_edge`, which is the
 /// edge in the autograd graph that connects the variable to a particular input
