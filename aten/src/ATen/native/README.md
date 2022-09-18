@@ -1,22 +1,17 @@
-ATen "native" functions are the modern mechanism for adding operators and
-functions to ATen.  Native functions
-are declared in `native_functions.yaml` and have implementations defined
-in one of the `cpp` files in this directory.
+ATen“native”函数是将运算符和函数添加到 ATen 的现代机制。 native 函数在 native_functions.yaml 中声明，并在此目录中的 某一个cpp 文件中定义了实现。
 
-Like all ATen methods/functions, native functions are made available
-from both ATen's C++ and Python APIs.  In C++, they are made available
-either as methods on `Tensor` (`t.mymeth()`) and functions in the ATen
-namespace (`at::myfunc()`).  In PyTorch, they are made available as
-methods on `Variable` or as functions on `torch._C._FunctionBase`.
+与所有 ATen 方法/函数一样，native函数在 ATen 的 C++ 和 Python API 上都是可以用的。 
+在 C++ 中，它们可以作为 `Tensor` 上的方法 (`t.mymeth()`) 和 ATen 命名空间中的函数 (`at::myfunc()`) 使用。 
+在 PyTorch 中，它们作为 `Variable` 上的方法或`torch._C._FunctionBase` 上的函数提供。 
 (It is the user's responsibility to re-export these functions in
 a more user-facing module.)
 
-The rest of this document describes how to implement an ATen function.
+本文档的其余部分描述了如何实现 ATen 函数。
 
-## Registering a function in `native_functions.yaml`
+## 在`native_functions.yaml`中注册一个函数
 
-Every native function must have an entry in
-`native_functions.yaml`.  The format can be summarized as:
+每个原生函数都必须在 `native_functions.yaml` 中有一个entry。 
+格式可以总结为：
 
 ```
 - func: func_name(ArgType arg0[=default], ArgType arg1[=default], ...) -> Return
@@ -26,7 +21,7 @@ Every native function must have an entry in
     CUDA: func_cuda
 ```
 
-Each component is described in more detail below:
+每个组件更详细的描述如下:
 
 ### `func`
 
