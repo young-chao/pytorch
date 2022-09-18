@@ -485,7 +485,7 @@ def _jacfwd(func, inputs, strict=False, vectorize=False):
 
 
 def jacobian(func, inputs, create_graph=False, strict=False, vectorize=False, strategy="reverse-mode"):
-    r"""Function that computes the Jacobian of a given function.
+    r"""计算给定函数的Jacobian矩阵.
 
     Args:
         func (function): a Python function that takes Tensor inputs and returns
@@ -697,7 +697,7 @@ def jacobian(func, inputs, create_graph=False, strict=False, vectorize=False, st
         return _tuple_postprocess(jacobian, (is_outputs_tuple, is_inputs_tuple))
 
 def hessian(func, inputs, create_graph=False, strict=False, vectorize=False, outer_jacobian_strategy="reverse-mode"):
-    r"""Function that computes the Hessian of a given scalar function.
+    r"""计算给定标量函数（输出为标量）的Hessian矩阵..
 
     Args:
         func (function): a Python function that takes Tensor inputs and returns
