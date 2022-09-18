@@ -58,6 +58,12 @@ class NodeGuard {
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //                               Node
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ /*
+ `Node` 是一个抽象类，它表示一个操作，该操作采用零个或多个输入`Variable` 
+ 并产生零个或多个输出`Variable`。 
+ PyTorch 的 autograd 机器中的所有函数都派生自这个类并覆盖它的 `apply` 方法。 
+ 然后可以通过调用运算符调用此类子类的实例。
+ */
 // A `Node` is an abstract class that represents an operation taking zero
 // or more input `Variable`s and producing zero or more output `Variable`s. All
 // functions in PyTorch's autograd machinery derive from this class and
@@ -66,6 +72,11 @@ class NodeGuard {
 //
 //                    Nodes in the Autograd Graph
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*
+当将 autograd 系统视为图形时，`Node`s 是顶点或节点，通过（有向）`Edge`s 相互连接，它们本身通过 (`Node`, input_nr) 对表示。 
+`Variable`s 是 `Node`s 的输出和输入，并在图形执行期间在这些边之间移动。 
+当两个或多个`Edge`s（来自不同来源）指向`Node`s 的相同输入时，沿所有这些边产生的值在被转发到目标`Node`s之前被隐式求和。
+*/
 // When viewing the autograd system as a graph, `Node`s are the vertices or
 // nodes, connected to each other via (directed) `Edge`s, which themselves are
 // represented via (`Node`, input_nr) pairs. `Variable`s are the outputs to
