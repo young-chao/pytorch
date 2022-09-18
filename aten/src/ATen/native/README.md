@@ -1,4 +1,4 @@
-ATen“native”函数是将运算符和函数添加到 ATen 的现代机制。 native 函数在 native_functions.yaml 中声明，并在此目录中的 某一个cpp 文件中定义了实现。
+ATen "native"函数是将运算符和函数添加到 ATen 的现代机制。 native 函数在 native_functions.yaml 中声明，并在此目录中的某一个cpp 文件中定义了实现。
 
 与所有 ATen 方法/函数一样，native函数在 ATen 的 C++ 和 Python API 上都是可以用的。 
 在 C++ 中，它们可以作为 `Tensor` 上的方法 (`t.mymeth()`) 和 ATen 命名空间中的函数 (`at::myfunc()`) 使用。 
@@ -10,7 +10,7 @@ a more user-facing module.)
 
 ## 在`native_functions.yaml`中注册一个函数
 
-每个原生函数都必须在 `native_functions.yaml` 中有一个entry。 
+每个native函数都必须在 `native_functions.yaml` 中有一个entry。 
 格式可以总结为：
 
 ```
