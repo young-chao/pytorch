@@ -12,7 +12,7 @@ from typing import Any, List, Optional
 class FunctionCtx(object):
 
     def save_for_backward(self, *tensors: torch.Tensor):
-        r"""Saves given tensors for a future call to :func:`~Function.backward`.
+        r"""保存给定的张量以供将来`~Function.backward`调用.
 
         ``save_for_backward`` should be called at most once, only from inside the
         :func:`forward` method, and only with tensors.
@@ -70,7 +70,7 @@ class FunctionCtx(object):
         self.to_save = tensors
 
     def save_for_forward(self, *tensors: torch.Tensor):
-        r"""Saves given tensors for a future call to :func:`~Function.jvp`.
+        r"""保存给定的张量以供将来:func:`~Function.jvp`调用.
 
         ``save_for_forward`` should be only called once, from inside the :func:`forward`
         method, and only be called with tensors.
