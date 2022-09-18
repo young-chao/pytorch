@@ -57,6 +57,13 @@ struct Node;
 ///~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ///                                Variable
 ///~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ /*
+`Variable` 增强了 `Tensor` 的能力，使其能够在我们的 autograd 机器中进行交互。 
+从概念上讲，`Variable`s 在 autograd 图中的 `Node`s 之间沿着 `Edge`s 行进。 
+“变量”可以是叶子，如神经网络中的权重，也可以是内部变量，当它是变量之间操作的结果时。 
+每个`Variable`还存储另一个`Variable`，称为它的`grad`（梯度）。 
+如果变量是叶子，它的梯度将累积到这个变量中。
+*/
 /// A `Variable` augments a `Tensor` with the ability to interact in our
 /// autograd machinery. Conceptually, `Variable`s travel along `Edge`s between
 /// `Node`s in the autograd graph. A `Variable` can either be a leaf, like a
@@ -65,6 +72,12 @@ struct Node;
 /// `Variable` called its `grad` (gradient). If the variable is a leaf, its
 /// gradient will be accumulated into this variable.
 ///
+/*
+每个Tensor都是一个Variable，但有时我们通俗地将不需要梯度的Variable称为Tensor
+（因为变量的 autograd 机制都不适用）。 
+从历史上看，Variable和Tensor是独立的概念，但现在它们完全一样
+（即我们有`using Variable = at::Tensor`）。
+*/
 /// Every Tensor is a Variable, but sometimes we colloquially refer to Variables
 /// that don't require gradients as Tensors (since none of the autograd
 /// machinery for Variables applies).  Historically, Variables and Tensors
@@ -73,6 +86,13 @@ struct Node;
 ///
 ///                              Gradient Edges
 ///~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*
+此外，`Variable` 有`gradient_edge` 的概念，它是 autograd 图中的边，
+将变量连接到梯度函数的特定输入，该梯度函数将在反向传播期间被调用。 
+更准确地说，这个梯度函数可以是以下两种情况之一： 
+1.`grad_fn`，如果变量在图的内部。 这是产生变量的函数的梯度。 
+2.`grad_accumulator`，如果变量是一个叶子，它将一个标量梯度值累积到它的`grad`变量中。
+*/
 /// Furthermore, `Variable`s have the notion of a `gradient_edge`, which is the
 /// edge in the autograd graph that connects the variable to a particular input
 /// of the gradient function that will be invoked with the variable during the
