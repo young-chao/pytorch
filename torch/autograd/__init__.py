@@ -196,8 +196,7 @@ def grad(
     allow_unused: bool = False,
     is_grads_batched: bool = False
 ) -> Tuple[torch.Tensor, ...]:
-    r"""Computes and returns the sum of gradients of outputs with respect to
-    the inputs.
+    r"""计算并返回输出相对于输入的梯度.
 
     ``grad_outputs`` should be a sequence of length matching ``output``
     containing the "vector" in vector-Jacobian product, usually the pre-computed
