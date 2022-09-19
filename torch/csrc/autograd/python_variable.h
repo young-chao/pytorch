@@ -62,10 +62,12 @@ inline bool THPVariable_Check(PyObject* obj) {
   return result;
 }
 
+//将THPVariable指针解包为对该指针指向实例包含的cdata的引用,即at::Tensor
 inline const at::Tensor& THPVariable_Unpack(THPVariable* var) {
   return *var->cdata;
 }
 
+//将PyObject指针解包为对cdata的引用,即at::Tensor
 inline const at::Tensor& THPVariable_Unpack(PyObject* obj) {
   return THPVariable_Unpack(reinterpret_cast<THPVariable*>(obj));
 }
