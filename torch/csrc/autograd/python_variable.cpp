@@ -1697,7 +1697,7 @@ PyTypeObject THPVariableMetaType = {
     nullptr, /* tp_new */
 };
 
-// 将THPVariableType注册成为torch._C._TensorBase
+// THPVariableType定义,实际上就是外部Python代码中的torch._C._TensorBase
 PyTypeObject THPVariableType = {
     PyVarObject_HEAD_INIT(
         &THPVariableMetaType,
