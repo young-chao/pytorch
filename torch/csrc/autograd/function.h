@@ -73,9 +73,11 @@ class NodeGuard {
 //                    Nodes in the Autograd Graph
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /*
-当将 autograd 系统视为图形时，`Node`s 是顶点或节点，通过（有向）`Edge`s 相互连接，它们本身通过 (`Node`, input_nr) 对表示。 
+当将 autograd 系统视为图形时，`Node`s 是顶点或节点，通过（有向）`Edge`s 相互连接，
+`Edge`s 本身通过 (`Node`, input_nr) 对表示。 
 `Variable`s 是 `Node`s 的输出和输入，并在图形执行期间在这些边之间移动。 
-当两个或多个`Edge`s（来自不同来源）指向`Node`s 的相同输入时，沿所有这些边产生的值在被转发到目标`Node`s之前被隐式求和。
+当两个或多个`Edge`s（来自不同来源）指向`Node`s 的相同输入时，沿所有这些边产生的值
+在被转发到目标`Node`s之前被隐式求和。
 */
 // When viewing the autograd system as a graph, `Node`s are the vertices or
 // nodes, connected to each other via (directed) `Edge`s, which themselves are
@@ -87,6 +89,13 @@ class NodeGuard {
 //
 //                              Hierarchy
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*
+子类通常表示可微函数及其梯度算子。 但是请注意，由于 `Node` 接受*0*个或更多输入并产生 
+*0*个或更多输出的非常笼统的定义，`Node` 的使用是灵活的，并且超出了纯数学运算的范围。 
+例如，`AccumulateGrad` 函数是一个 *sink*：它接受一个输入，但不产生输出，
+而是累积输入作为副作用。 在另一个极端，“GraphRoot”函数不接收来自其他函数的输入，
+但会产生多个输出。
+*/
 // Subclasses usually represent differentiable functions as well as their
 // gradient operators. Note, however, that due to the very general definition
 // of a `Node` taking *zero* or more inputs and producing *zero* or more
@@ -98,6 +107,18 @@ class NodeGuard {
 //
 //                              Interface
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*
+`Node`上最重要的方法是call运算符，它接收变量列表并生成变量列表。这些列表的精确大小
+可以通过 `num_inputs()` 和 `num_outputs()` 确定。 `Node`s 通过它们的 `next_edge` 
+接口缝合在一起，这让您可以操作 `Node` 的输出边集。您可以使用 `add_next_edge()` 添
+加一条边，使用 `next_edge(index)` 检索一条边，并通过 `next_edges()` 方法对其进行
+迭代。其他方法可用于与 JIT 和 PyTorch 的其他部分集成。每个 `Node` 都有一个 
+*sequence number*，它按照 `Node` 构造的顺序单调递增。它可以通过 `sequence_nr()` 
+方法检索。请注意，此序列号是 *thread local*。这意味着当`Node` `A`，`B`和`C`在同一
+个线程中连续创建时，它们的序号将被排序为`A` < `B` < `C`。然而，如果 `A` 和 `B` 是
+在一个线程中创建的，而 `C` 是在一个新线程中创建的，则不能保证 `C` 相对于 `A` 或 `B`
+的顺序。更多关于序列号用法的详细信息，请参见 Note[Sequence Number]。
+*/
 // The most important method on `Node` is the call operator, which takes in
 // a list of variables and produces a list of variables. The precise size of
 // these lists can be determined with `num_inputs()` and `num_outputs()`.
