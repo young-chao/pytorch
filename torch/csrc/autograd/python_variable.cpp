@@ -1734,6 +1734,7 @@ PyTypeObject THPVariableType = {
     nullptr, /* tp_iternext */
     nullptr, /* tp_methods */
     nullptr, /* tp_members */
+    //THPVariableType的属性值
     THPVariable_properties, /* tp_getset */
     nullptr, /* tp_base */
     nullptr, /* tp_dict */
@@ -1742,11 +1743,17 @@ PyTypeObject THPVariableType = {
     0, /* tp_dictoffset */
     nullptr, /* tp_init */
     nullptr, /* tp_alloc */
+    /*
+    虽然这里提供了 new，但是用 cls ==THPVariableMeta 调用它是非法的。 
+    相反，先将其子类化，然后再构造它。
+    */
     // Although new is provided here, it is illegal to call this with cls ==
     // THPVariableMeta.  Instead, subclass it first and then construct it
     THPVariable_pynew, /* tp_new */
 };
 
+//THPVariable_NewWithVar的实际返回是THPVariable的指针,
+//因此THPVariableType实际上就对应THPVariable。
 PyObject* THPVariable_pynew(
     PyTypeObject* type,
     PyObject* args,
