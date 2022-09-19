@@ -2143,12 +2143,14 @@ bool THPVariable_initModule(PyObject* module) {
   PyModule_AddObject(module, "_TensorMeta", (PyObject*)&THPVariableMetaType);
 
   static std::vector<PyMethodDef> methods;
+  //THPVariableType的成员函数挂载。成员函数位置：tools\autograd\templates\python_variable_methods.cpp
   THPUtils_addPyMethodDefs(methods, torch::autograd::variable_methods);
   THPUtils_addPyMethodDefs(methods, extra_methods);
   THPVariableType.tp_methods = methods.data();
   if (PyType_Ready(&THPVariableType) < 0)
     return false;
   Py_INCREF(&THPVariableType);
+  //将C中的THPVariableType类和Python中的_TensorBase类衔接
   PyModule_AddObject(module, "_TensorBase", (PyObject*)&THPVariableType);
   torch::autograd::initTorchFunctions(module);
   torch::autograd::initTensorImplConversion(module);
