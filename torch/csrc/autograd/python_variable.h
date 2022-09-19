@@ -13,6 +13,8 @@
 
 namespace py = pybind11;
 
+// 支持 torch.autograd.Variable 的 Python 对象，
+// 核心为at::Tensor类型的cdata，定义在aten\src\ATen\templates\TensorBody.h中
 // Python object that backs torch.autograd.Variable
 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
 struct THPVariable {
