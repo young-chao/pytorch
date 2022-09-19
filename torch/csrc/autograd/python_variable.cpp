@@ -1513,6 +1513,7 @@ int THPVariable_set_imag(PyObject* self, PyObject* imag, void* unused) {
   END_HANDLE_TH_ERRORS_RET(-1)
 }
 
+//属性在这里注册是因为我们目前只能手动绑定它们。 TODO：在 native_functions 中声明
 // properties are registered here because we are currently only able to bind
 // them manually. TODO: make declarable in native_functions
 // NOLINTNEXTLINE(modernize-avoid-c-arrays,cppcoreguidelines-avoid-c-arrays,cppcoreguidelines-avoid-non-const-global-variables)
@@ -1734,7 +1735,7 @@ PyTypeObject THPVariableType = {
     nullptr, /* tp_iternext */
     nullptr, /* tp_methods */
     nullptr, /* tp_members */
-    //THPVariableType的属性值
+    //THPVariableType的方法
     THPVariable_properties, /* tp_getset */
     nullptr, /* tp_base */
     nullptr, /* tp_dict */
