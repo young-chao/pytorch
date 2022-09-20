@@ -426,11 +426,13 @@ class TORCH_API Tensor: public TensorBase {
   ///     None values can be specified for scalar Tensors or ones that
   ///     don't require grad. If a None value would be acceptable then
   ///     this argument is optional.
+  /// \param retain_graph 如果设置为false，计算图中的中间变量在计算完后就会被释放。
   /// \param retain_graph If ``false``, the graph used to compute
   ///     the grads will be freed. Note that in nearly all cases setting
   ///     this option to True is not needed and often can be worked around
   ///     in a much more efficient way. Defaults to the value of
   ///     ``create_graph``.
+  /// \param create_graph 如果为true，将构建导数图，允许计算更高阶的导数。
   /// \param create_graph If ``true``, graph of the derivative will
   ///     be constructed, allowing to compute higher order derivative
   ///     products. Defaults to ``false``.
