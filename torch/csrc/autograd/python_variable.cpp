@@ -1513,7 +1513,7 @@ int THPVariable_set_imag(PyObject* self, PyObject* imag, void* unused) {
   END_HANDLE_TH_ERRORS_RET(-1)
 }
 
-//注册THPVariable包含的属性，由python属性映射到C++属性，属性均在该文件中定义
+//注册THPVariable包含的属性，由python属性映射到C++属性获取方法，get方法均在该文件中定义
 // properties are registered here because we are currently only able to bind
 // them manually. TODO: make declarable in native_functions
 // NOLINTNEXTLINE(modernize-avoid-c-arrays,cppcoreguidelines-avoid-c-arrays,cppcoreguidelines-avoid-non-const-global-variables)
