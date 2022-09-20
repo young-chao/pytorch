@@ -63,7 +63,7 @@ struct Node;
 
 namespace at {
 
-class OptionalTensorRef; // ATen/core/TensorBase.h 中定义, 此处设计为Tensor类的友元类
+class OptionalTensorRef; // ATen/core/Tensor.h 中定义, 此处设计为Tensor类的友元类
 class Tensor;
 using TensorList = ArrayRef<Tensor>;
 
