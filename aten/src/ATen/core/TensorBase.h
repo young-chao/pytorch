@@ -1,3 +1,4 @@
+// at::TensorBase定义
 #pragma once
 
 #include <c10/core/Device.h>
@@ -53,12 +54,18 @@ inline bool variable_excluded_from_dispatch() {
 
 // NOTE: [Tensor vs. TensorBase]
 //
+// 张量是 PyTorch 中的中心数据结构，它和它的头文件几乎被所有文件使用或包含。 
+// 不幸的是，这意味着每次在 native_functions.yaml 中更新或更改操作签名时，
+// 您（以及所有其他 PyTorch 开发人员）都需要重新编译所有 ATen 及其依赖项。
 // Tensor, being the central data structure in PyTorch, gets used and
 // it's header included almost everywhere. Unfortunately this means
 // every time an operator signature is updated or changed in
 // native_functions.yaml, you (and every other PyTorch developer) need
 // to recompile all of ATen and it's dependencies.
 //
+// TensorBase 旨在打破这些头文件依赖关系，并为所有 PyTorch 开发人员缩短增量构
+// 建时间. TensorBase 表示对 TensorImpl 的引用计数句柄，与 Tensor 完全相同.
+// 但是，TensorBase 的 API 中没有代码生成方法，因此不依赖 native_functions.yaml.
 // TensorBase aims to break up these header dependencies, and improve
 // incremental build times for all PyTorch developers. TensorBase
 // represents a reference counted handle to TensorImpl, exactly the
@@ -81,6 +88,8 @@ class TORCH_API TensorBase {
   struct unsafe_borrow_t { explicit unsafe_borrow_t() = default; };
 
  protected:
+  // 创建一个具有0个引用计数的张量。 必须特别注意避免在析构时减少此引用计数。 
+  // 旨在支持 MaybeOwnedTraits<Tensor>。
   // Create a Tensor with a +0 reference count. Special care must be
   // taken to avoid decrementing this reference count at destruction
   // time. Intended to support MaybeOwnedTraits<Tensor>.
@@ -725,10 +734,14 @@ class TORCH_API TensorBase {
 
   // Gradient Node and Edges
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+  
+  /// 获取 `Variable` 的梯度函数。 如果这是一个叶子变量，则返回的指针将为空。
   /// Gets the gradient function of the `Variable`. If this is a leaf variable,
   /// the pointer returned will be null.
   ///
+  /// 对于视图变量：
+  /// 获取最新的 grad_fn. 如果共享数据或者 base 被修改了, 我们重新创建 grad_fn 来
+  /// 表达 base Variable 的最新视图关系.
   /// For View Variables:
   /// Gets the up-to-date grad_fn. If the shared data or base was modified, we
   /// re-create the grad_fn to express the up-to-date view relationship between
