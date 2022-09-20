@@ -23,6 +23,8 @@
 namespace torch {
 namespace autograd {
 
+// 从下方代码可以发现，此处的`Variable`即`at::Tensor`, 
+// python层面的Variable和Tensor还是有区别, 因为此后对Tensor还有一些包装. 
 /// `Variable` is exactly the same as `Tensor` (i.e. we have `using Variable =
 /// at::Tensor`). This means you can perform all the usual mathematical and
 /// other operations you can perform on `Tensor`s also on `Variable`s.
