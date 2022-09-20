@@ -147,8 +147,10 @@ struct C10_API PlacementDeleteContext {
   }
 };
 
+// 声明Tensor实现结构体
 struct TensorImpl;
 
+// 记录自动梯度过程元信息的接口
 struct C10_API AutogradMetaInterface {
   virtual void set_requires_grad(
       bool requires_grad,
@@ -168,6 +170,10 @@ struct C10_API AutogradMetaInterface {
 
 namespace impl {
 
+// 不幸的是，AutogradMeta 的定义存在于与 TensorImpl 不同的编译单元中
+// （libtorch.so 与 libc10.so），这意味着我们不能从 TensorImpl 构造 
+// AutogradMeta，甚至不能从 cpp 文件构造。 所以我们必须通过一个工厂函数来
+// 间接调用它，该工厂函数将在我们加载 libtorch.so 时初始化。
 // Unfortunately, the definition of AutogradMeta lives in a separate
 // compilation unit than TensorImpl (libtorch.so versus libc10.so)
 // which means that we cannot construct an AutogradMeta from TensorImpl,
@@ -272,6 +278,9 @@ struct C10_API ExtraMeta {
 
 // NOTE [ Version Counter Sharing ]
 //
+// 每个张量都有一个版本计数器。 每当张量的数据或大小通过 in-place 变量操作发生变化时，
+// 版本计数器就会增加。 版本计数器用于检测对已保存变量的修改，这些修改会导致不正确的
+// 梯度计算。 版本计数器可以在变量之间共享：
 // Every Tensor has a version counter. Version counters are incremented whenever
 // the data or size of a tensor changes through in-place Variable operations.
 // Version counters are used to detect modifications to saved variables which
@@ -289,15 +298,21 @@ struct C10_API ExtraMeta {
 // 2. `x.data` does not share the version counter of `x`. (See discussion at
 // https://github.com/pytorch/pytorch/issues/5396)
 //
+// 问题：为什么我们将版本计数器放在 TensorImpl 而不是 AutogradMeta 中？
 // Question: Why do we put the version counter in TensorImpl instead of
 // AutogradMeta?
 //
+// 答：Variable/Tensor 合并后，当 `requires_grad_` 为 false 时，一个 tensor 不会有 
+// AutogradMeta，但是当我们在需要为后向传播保存张量的函数的前向传播中使用此张量时，我
+// 们需要跟踪此张量的版本以确保它在 autograd 图中始终有效。
 // Answer: After the Variable/Tensor merge, a tensor will not have AutogradMeta
 // when its `requires_grad_` is false, but when we use this tensor in the
 // forward pass of a function that requires saving this tensor for backward, we
 // need to keep track of this tensor's version to make sure it's always valid in
 // the autograd graph.
 //
+// 为了实现这个目标，我们将版本计数器放在 TensorImpl 中而不是 AutogradMeta 中，
+// 并让它始终可用。 这允许我们在张量不需要梯度时可以有不携带 AutogradMeta 的优化。
 // To achieve this goal, we put the version counter in TensorImpl instead of
 // AutogradMeta, and have it always be available. This allows us to have the
 // optimization of not carrying AutogradMeta when a tensor doesn't require
@@ -428,29 +443,42 @@ class C10_TensorImpl_Size_Check_Dummy_Class;
 #endif
 
 /**
+ * 张量的低级表示，它包含一个指向存储（包含实际数据）和元数据（例如，大小和
+ * 步幅）的指针，将数据的这个特定视图描述为张量。
  * The low-level representation of a tensor, which contains a pointer
  * to a storage (which contains the actual data) and metadata (e.g., sizes and
  * strides) describing this particular view of the data as a tensor.
  *
+ * 我们在内存中表示张量的一些基本特征：
  * Some basic characteristics about our in-memory representation of
  * tensors:
  *
+ *  - 它包含一个指向存储结构（Storage/StorageImpl）的指针，该结构包含指向
+      实际数据的指针并记录视图的数据类型和设备。 这允许多个张量对相同的基础
+      数据进行别名，从而允许在张量上有效地实现不同的 *views*。
  *  - It contains a pointer to a storage struct (Storage/StorageImpl)
  *    which contains the pointer to the actual data and records the
  *    data type and device of the view.  This allows multiple tensors
  *    to alias the same underlying data, which allows to efficiently
  *    implement differing *views* on a tensor.
  *
+ *  - 张量结构本身记录有关张量的视图特定的元数据，例如大小、步幅和存储偏移量。 
+      存储的每个视图都可以有不同的大小或偏移量。
  *  - The tensor struct itself records view-specific metadata about
  *    the tensor, e.g., sizes, strides and offset into storage.
  *    Each view of a storage can have a different size or offset.
  *
+ *  - 此类采取侵入式引用（将引用计数直接塞进数据本身，和数据共存亡）。 它被
+      引用以便我们可以支持大张量的快速释放；它是侵入式引用计数的，因此我们仍
+      然可以对原始指针执行引用计数操作，这在跨语言边界传递张量时通常更方便。
  *  - This class is intrusively refcounted.  It is refcounted so that
  *    we can support prompt deallocation of large tensors; it is
  *    intrusively refcounted so that we can still perform reference
  *    counted operations on raw pointers, which is often more convenient
  *    when passing tensors across language boundaries.
  *
+ *  - 出于向后兼容的原因，张量可能处于未初始化状态。 
+      张量可能存在以下两种未初始化的情况：
  *  - For backwards-compatibility reasons, a tensor may be in an
  *    uninitialized state.  A tensor may be uninitialized in the following
  *    two ways:
@@ -488,6 +516,10 @@ class C10_TensorImpl_Size_Check_Dummy_Class;
  *    uninitialized storage to become shared (or a shared storage to
  *    become uninitialized, e.g., from FreeMemory).
  *
+ *    在实践中，storage-UNINITIALIZED 和 dtype-UNINITIALIZED 的张量
+ *    *非常*短暂：本质上，在您执行 Resize() 之后，您基本上总是在之后立
+ *    即调用 mutable_data()。 如果给定一个 storage-UNINITIALIZED、
+ *    dtype-UNINITIALIZED 的张量，大多数函数都无法正常工作。
  *    In practice, tensors which are storage-UNINITIALIZED and
  *    dtype-UNINITIALIZED are *extremely* ephemeral: essentially,
  *    after you do a Resize(), you basically always call mutable_data()
@@ -498,6 +530,7 @@ class C10_TensorImpl_Size_Check_Dummy_Class;
  *    tensor is fully initialized in all fields.  Please do not write new code
  *    that depends on these uninitialized states.
  */
+// 继承c10::intrusive_ptr_target类, 位于c10/util/intrusive_ptr.h
 struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   TensorImpl() = delete;
   virtual ~TensorImpl() override;
