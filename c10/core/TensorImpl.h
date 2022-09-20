@@ -610,6 +610,10 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
 
  public:
   /**
+   * 返回此张量对应的 DispatchKeySet，指定此张量标识的所有 DispatchKey。 
+     这是用于在该张量上进行 dispatch 操作的信息。
+     dispatch 调度基于设备类型和张量布局：比如是 CPU 张量还是 CUDA 张量，是有
+     步幅的张量还是稀疏的张量。
    * Return the DispatchKeySet corresponding to this Tensor, specifying
    * all of the DispatchKeys that this Tensor identifies as.  This is the
    * information used to dispatch operations on this tensor.
@@ -796,6 +800,8 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   }
 
   /**
+   * 张量是否布置在连续内存中。 具有非平凡步幅的张量是不连续的。 
+     有关张量是否连续的确切定义，请参见 compute_contiguous()。
    * Whether or not a tensor is laid out in contiguous memory.
    *
    * Tensors with non-trivial strides are not contiguous.  See
@@ -1277,6 +1283,7 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   }
 
   // ~~~~~ Autograd API ~~~~~
+  // 下面的一些方法是在 TensorImpl.cpp 中定义的，因为 Tensor 是一个不完整的类型。
   // Some methods below are defined in TensorImpl.cpp because Tensor is an
   // incomplete type.
 
@@ -1463,6 +1470,7 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   }
 
   /**
+   * 返回一个指向该张量所引用的实际数据的 void* 数据指针。
    * Return a void* data pointer to the actual data which this tensor refers to.
    *
    * It is invalid to call data() on a dtype-uninitialized tensor, even if the
@@ -1782,6 +1790,8 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
 
   // NOTE [ TensorImpl Shallow-Copying ]
   //
+  // 当我们希望两个变量共享相同的张量元数据（例如大小/步幅/存储指针/存储偏移量），但每个
+  // 变量都有不同的 autograd 历史时，使用 TensorImpl 浅拷贝。
   // TensorImpl shallow-copying is used when we want to have two Variables share
   // the same tensor metadata (e.g. sizes / strides / storage pointer /
   // storage_offset), but each with a different autograd history. Example call
