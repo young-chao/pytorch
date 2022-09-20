@@ -16,6 +16,7 @@ multiple variants of the library, summarized here:
 
 PyTorch 使用引用计数来允许张量在公共底层存储上提供不同的视图。 例如，当您在 
 Tensor 上调用 view() 时，会为新的 THTensor 分配不同的维度，但它与原始张量共享相同的 c10::StorageImpl。
+
 PyTorch employs reference counting in order to permit tensors to provide
 differing views on a common underlying storage.  For example, when you call
 view() on a Tensor, a new THTensor is allocated with differing dimensions,
@@ -23,6 +24,7 @@ but it shares the same c10::StorageImpl with the original tensor.
 
 不幸的是，这意味着我们需要在 C 库代码中手动跟踪引用计数。 
 幸运的是，对于我们大多数实现张量操作的库代码，您只需记住一条规则：
+
 Unfortunately, this means we are in the business of manually tracking reference
 counts inside our C library code.  Fortunately, for most of our library code implementing
 tensor operations, there is only one rule you have to remember:
