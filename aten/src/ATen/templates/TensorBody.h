@@ -1,3 +1,4 @@
+// at::Tensor定义, 继承at::Tensor类(位于ATen/core/TensorBase.h), 方法包括赋值等运算符重载、autograd的backward和hook
 #pragma once
 
 #ifdef TORCH_ASSERT_NO_OPERATORS
@@ -68,6 +69,8 @@ using TensorList = ArrayRef<Tensor>;
 
 using Stream = c10::Stream;
 
+// Tensor 是一个“通用”对象，它持有指向底层 TensorImpl 对象的指针，该对象具有嵌入式引用计数。 
+// 这样一来，Tensor 就类似于 boost::intrusive_ptr。
 // Tensor is a "generic" object holding a pointer to the underlying TensorImpl object, which
 // has an embedded reference count. In this way, Tensor is similar to boost::intrusive_ptr.
 //
@@ -78,15 +81,21 @@ using Stream = c10::Stream;
 //   ...
 // }
 //
+// 在这个例子中，当我们说 Tensor b = a 时，我们正在创建一个指向相同底层 TensorImpl 的新对象，
+// 并增加其引用计数。 当 b 离开该函数范围时，析构函数通过调用它指向的 TensorImpl 上的 release() 
+// 来减少引用计数。 现有的构造函数、运算符重载等注意实现正确的语义。
 // In this example, when we say Tensor b = a, we are creating a new object that points to the
 // same underlying TensorImpl, and bumps its reference count. When b goes out of scope, the
 // destructor decrements the reference count by calling release() on the TensorImpl it points to.
 // The existing constructors, operator overloads, etc. take care to implement the correct semantics.
 //
+// 请注意，Tensor 也可以为 NULL，即它不与任何底层的 TensorImpl 关联，并且必须特别注意处理这个问题。
 // Note that Tensor can also be NULL, i.e. it is not associated with any underlying TensorImpl, and
 // special care must be taken to handle this.
 class TORCH_API Tensor: public TensorBase {
  protected:
+  // 创建一个具有0个引用计数的张量。 必须特别注意避免在析构时减少此引用计数。 
+  // 旨在支持 MaybeOwnedTraits<Tensor>。
   // Create a Tensor with a +0 reference count. Special care must be
   // taken to avoid decrementing this reference count at destruction
   // time. Intended to support MaybeOwnedTraits<Tensor>.
@@ -352,12 +361,18 @@ class TORCH_API Tensor: public TensorBase {
 
   /// \fn bool is_leaf() const;
   ///
+  /// 将`requires_grad()`设为``false``则将视为叶子节点张量（不会计算梯度，因此是反向传播的末端）。
   /// All Tensors that have `requires_grad()` which is ``false`` will be leaf Tensors by convention.
   ///
+  /// 对于 `requires_grad()` 为 `true` 的张量，如果它们是由用户创建的，它们将是叶张量。 
+  /// 这意味着它们不是操作的结果，因此 `grad_fn()` 是 `nullptr`。
+  /// `grad_fn()`为操作的 backward 函数，用来记录变量是怎么来的，方便反向传播计算梯度
   /// For Tensors that have `requires_grad()` which is ``true``, they will be leaf Tensors if they were
   /// created by the user. This means that they are not the result of an operation and so
   /// `grad_fn()` is `nullptr`.
   ///
+  /// 只有叶子张量会在调用 `backward()` 期间填充其 `grad()`。
+  /// 要为非叶子张量填充 `grad()`，可以使用 `retain_grad()`。
   /// Only leaf Tensors will have their `grad()` populated during a call to `backward()`.
   /// To get `grad()` populated for non-leaf Tensors, you can use `retain_grad()`.
   ///
@@ -389,14 +404,19 @@ class TORCH_API Tensor: public TensorBase {
 
   /// \fn void backward(const Tensor & gradient={}, c10::optional<bool> retain_graph=c10::nullopt, bool create_graph=false, c10::optional<TensorList> inputs=c10::nullopt) const;
   ///
+  /// backward()：计算当前张量相对于图中叶子张量的梯度。
   /// Computes the gradient of current tensor with respect to graph leaves.
   ///
+  /// 该图使用链式法则进行区分。 如果张量是非标量的（即它的数据有多个元素）并且需要梯度，
+  /// 则该函数还需要指定``gradient``。 它应该是一个匹配类型和位置的张量，
+  /// 其中包含微分函数关于该张量的梯度。
   /// The graph is differentiated using the chain rule. If the tensor is
   /// non-scalar (i.e. its data has more than one element) and requires
   /// gradient, the function additionally requires specifying ``gradient``.
   /// It should be a tensor of matching type and location, that contains
   /// the gradient of the differentiated function w.r.t. this Tensor.
   ///
+  /// 这个函数在叶子张量中累积梯度 - 可能需要在调用它之前将它们归零。
   /// This function accumulates gradients in the leaves - you might need to
   /// zero them before calling it.
   ///
@@ -423,6 +443,7 @@ class TORCH_API Tensor: public TensorBase {
   ///     It is an implementation detail on which the user should not rely.
   ///     See https://github.com/pytorch/pytorch/pull/60521#issuecomment-867061780 for more details.
   void backward(const Tensor & gradient={}, c10::optional<bool> retain_graph=c10::nullopt, bool create_graph=false, c10::optional<TensorList> inputs=c10::nullopt) const {
+    // 支持input可选的包装, _backward() + optional input = backward() 
     // NB: Adding this wrapper to _backward here because we'd like our
     // 'backwards' api to accept the 'inputs' argument optionally. Since code gen
     // currently does not support optional of TensorList our approach is to replace
@@ -572,9 +593,11 @@ class TORCH_API Tensor: public TensorBase {
   using hook_return_void_t = std::enable_if_t<std::is_void<typename c10::invoke_result_t<T&, Tensor>>::value, unsigned>;
   template <typename T>
   using hook_return_var_t = std::enable_if_t<std::is_same<typename c10::invoke_result_t<T&, Tensor>, Tensor>::value, unsigned>;
-
+  
+  /// 注册一个反向传播时的hook方法.
   /// Registers a backward hook.
   ///
+  /// 每次计算关该张量的梯度时，都会调用该hook方法.
   /// The hook will be called every time a gradient with respect to the Tensor is computed.
   /// The hook should have one of the following signature:
   /// ```
