@@ -63,7 +63,7 @@ struct Node;
 
 namespace at {
 
-class OptionalTensorRef;
+class OptionalTensorRef; // ATen/core/TensorBase.h 中定义, 此处设计为Tensor类的友元类
 class Tensor;
 using TensorList = ArrayRef<Tensor>;
 
@@ -594,7 +594,7 @@ class TORCH_API Tensor: public TensorBase {
   template <typename T>
   using hook_return_var_t = std::enable_if_t<std::is_same<typename c10::invoke_result_t<T&, Tensor>, Tensor>::value, unsigned>;
   
-  /// 注册一个反向传播时的hook方法.
+  /// 注册一个反向传播时的hook方法. 此处仅声明, 具体实现位于ATen/core/Tensor.h中
   /// Registers a backward hook.
   ///
   /// 每次计算关该张量的梯度时，都会调用该hook方法.
