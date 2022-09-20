@@ -2143,11 +2143,13 @@ void initTensorImplConversion(PyObject* module) {
 } // namespace autograd
 } // namespace torch
 
+// 构建Tensor相关的模块
 bool THPVariable_initModule(PyObject* module) {
   THPVariableMetaType.tp_base = &PyType_Type;
   if (PyType_Ready(&THPVariableMetaType) < 0)
     return false;
   Py_INCREF(&THPVariableMetaType);
+  //将C中的THPVariableMetaType类和Python中的_TensorMeta类衔接
   PyModule_AddObject(module, "_TensorMeta", (PyObject*)&THPVariableMetaType);
 
   static std::vector<PyMethodDef> methods;
