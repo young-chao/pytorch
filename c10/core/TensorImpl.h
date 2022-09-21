@@ -150,13 +150,15 @@ struct C10_API PlacementDeleteContext {
 // 声明Tensor实现结构体
 struct TensorImpl;
 
-// 记录自动梯度过程元信息的接口
+// 记录自动梯度过程元信息的接口, 在TensorImpl类中用于定义一个
+// 指向梯度元信息的指针: 
+// unique_ptr<c10::AutogradMetaInterface> autograd_meta_
 struct C10_API AutogradMetaInterface {
   virtual void set_requires_grad(
       bool requires_grad,
       at::TensorImpl* self_impl) = 0;
-  virtual bool requires_grad() const = 0;
-  virtual at::Tensor& mutable_grad() = 0;
+  virtual bool requires_grad() const = 0; //是否需要计算梯度
+  virtual at::Tensor& mutable_grad() = 0; //
   virtual const at::Tensor& grad() const = 0;
   virtual const at::Tensor& fw_grad(uint64_t level, const at::TensorBase& self)
       const = 0;
@@ -180,6 +182,8 @@ namespace impl {
 // not even from the cpp file.  So we have to indirect it through a factory
 // function which will be initialized when we load libtorch.so.
 
+// 用于初始化AutogradMeta, 相应方法 make 在子类中具体实现
+// 子类：ConcreteAutogradMetaFactory 位于 torch/csrc/autograd/variable.cpp
 struct C10_API AutogradMetaFactory {
   virtual ~AutogradMetaFactory() = default;
   virtual std::unique_ptr<AutogradMetaInterface> make() const = 0;
@@ -1288,11 +1292,15 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   // incomplete type.
 
   /**
+   * 设置张量是否需要梯度.
    * Set whether or not a tensor requires gradient.
    */
   void set_requires_grad(bool requires_grad);
 
   /**
+   * 如果张量需要梯度，则为 true. 需要梯度的张量可以跟踪对它们执行的任何操作
+     的历史记录，因此我们可以自动将其区分回它们. 需要梯度并且没有历史记录的
+     张量是“叶”张量，我们将其梯度累加到 grad 中。
    * True if a tensor requires gradient.  Tensors which require gradient
    * have history tracked for any operations performed on them, so that
    * we can automatically differentiate back to them.  A tensor that
@@ -1302,12 +1310,14 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   bool requires_grad() const;
 
   /**
+   * 返回指向该梯度的可变引用. 通常用作`t.grad（）= x`将梯度设置为全新的张量.
    * Return a mutable reference to the gradient.  This is conventionally
    * used as `t.grad() = x` to set a gradient to a completely new tensor.
    */
   at::Tensor& mutable_grad();
 
   /**
+   * 返回张量的累积梯度. 当该张量是叶子张量时，该梯度在后向传播时会写入. 
    * Return the accumulated gradient of a tensor.  This gradient is written
    * into when performing backwards, when this tensor is a leaf tensor.
    */
