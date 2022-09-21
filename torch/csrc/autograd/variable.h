@@ -23,8 +23,8 @@
 namespace torch {
 namespace autograd {
 
-// 从下方代码可以发现，此处的`Variable`即`at::Tensor`, 
-// python层面的Variable和Tensor还是有区别, 因为此后对Tensor还有一些包装. 
+// 从下方代码可以发现, 此处的`Variable`即`at::Tensor`.
+// Variable和Tensor含义已经统一. 
 /// `Variable` is exactly the same as `Tensor` (i.e. we have `using Variable =
 /// at::Tensor`). This means you can perform all the usual mathematical and
 /// other operations you can perform on `Tensor`s also on `Variable`s.
@@ -115,6 +115,10 @@ struct Node;
 ///
 ///                                 Views
 ///~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// `Variable` 有可能是另一个 `Variable` 的 *view*，在这种情况下，它会跟踪 `Variable` 
+/// 的数据和 autograd 历史记录。 除了构造之外，视图的界面与常规“变量”的界面相同。 您可
+/// 以通过调用其 `is_view()` 方法来确定 `Variable` 是否是一个视图。 请注意，*view* 
+/// 语义仅对与 autograd 相关的 `Variable` 关系有意义。
 /// It is possible for a  `Variable` to be a *view* of another `Variable`, in
 /// which case it tracks that `Variable`'s data and autograd history. Beyond
 /// construction, the interface of a view is identical to that of a regular
