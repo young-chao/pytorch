@@ -2637,25 +2637,24 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   }
 
  protected:
-  Storage storage_;
+  Storage storage_; //实际存储内容. Storage类位于c10/core/Storage.h
 
  private:
   // 该指针指向一个 AutogradMeta 结构，该结构存储了 autograd 特定的字段（例如 
   // grad_ / grad_fn_ / grad_accumulator_）。 这个指针总是拥有唯一的所有权（
-  // 意味着一次只有一个 TensorImpl 可以拥有它）。
+  // 每一个TensorImpl在同一时刻只有唯一一个AutogradMeta）.
   // This pointer points to an AutogradMeta struct that stores autograd-specific
   // fields (such as grad_ / grad_fn_ / grad_accumulator_). This pointer always
   // has unique ownership (meaning only one TensorImpl can own it at a time).
   //
-  // autograd_meta_ 可以是 nullptr，作为优化. 相当于有一个autograd_meta_指向一个默认
-  // 构造的AutogradMeta. 直观地说, 不需要 grad 的张量会将此字段设置为 null.
+  // 不需要 grad 的张量会将此字段设置为 null. 而出于优化的目的，即使需要梯度, 
+  // autograd_meta_ 也可以是 null，这种情况等同于被赋值成一个缺省的AutogradMeta. 
   // autograd_meta_ can be nullptr, as an optimization.  When this occurs, it is
   // equivalent to having an autograd_meta_ pointing to a default constructed
   // AutogradMeta; intuitively, tensors which don't require grad will have this
   // field set to null.
   //
-  // 这意味着autograd_meta_上的 accessors 必须谨慎测试是否有NULLPTR，并在这种情况下适当
-  // 处理默认行为。
+  // 在使用时候需要仔细校验是否为 nullptr.
   // This means accessors on autograd_meta_ have to be careful to test if they
   // got a nullptr, and handle default behavior appropriately in that case.
   //
