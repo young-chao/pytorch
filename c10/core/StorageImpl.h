@@ -8,12 +8,14 @@
 
 namespace c10 {
 
+// storage代表张量的基础备份数据缓冲区. 
 // A storage represents the underlying backing data buffer for a
 // tensor.  This concept was inherited from the original Torch7
 // codebase; we'd kind of like to get rid of the concept
 // (see https://github.com/pytorch/pytorch/issues/14797) but
 // it's hard work and no one has gotten around to doing it.
 //
+// storage应该独自拥有一个数据指针。两个非空数据指针别名当且仅当它们来自相同的存储.
 // NB: storage is supposed to uniquely own a data pointer; e.g.,
 // two non-null data pointers alias if and only if they are from
 // the same storage.  Technically you can violate this invariant
@@ -206,12 +208,12 @@ struct C10_API StorageImpl : public c10::intrusive_ptr_target {
   }
 
  private:
-  DataPtr data_ptr_;
-  SymInt size_bytes_;
+  DataPtr data_ptr_; //数据指针
+  SymInt size_bytes_; //数据占用大小
   bool resizable_;
   // Identifies that Storage was received from another process and doesn't have
   // local to process cuda memory allocation
   bool received_cuda_;
-  Allocator* allocator_;
+  Allocator* allocator_; //空间分配器
 };
 } // namespace c10
