@@ -150,10 +150,11 @@ struct C10_API PlacementDeleteContext {
 // 声明Tensor实现结构体
 struct TensorImpl;
 
-// 记录自动梯度过程元信息的接口, 在TensorImpl类中用于定义一个
-// 指向梯度元信息的指针: 
+// 记录自动梯度过程元信息的接口, 需要派生类来实现具体功能:
+// AutogradMeta 类：位于torch/csrc/autograd/variable.h
+// 在TensorImpl类中用于定义一个指向梯度元信息的指针: 
 // unique_ptr<c10::AutogradMetaInterface> autograd_meta_
-struct C10_API AutogradMetaInterface {
+struct C10_API AutogradMetaInterface { //
   virtual void set_requires_grad(
       bool requires_grad,
       at::TensorImpl* self_impl) = 0;
