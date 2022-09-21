@@ -12,6 +12,7 @@ struct C10_API Storage {
   Storage(c10::intrusive_ptr<StorageImpl> ptr)
       : storage_impl_(std::move(ptr)) {}
 
+  // 使用给定的allocator分配内存缓冲区并用它创建存储.
   // Allocates memory buffer using given allocator and creates a storage with it
   Storage(
       use_byte_size_t /*use_byte_size*/,
@@ -23,7 +24,9 @@ struct C10_API Storage {
             size_bytes,
             allocator,
             resizable)) {}
-
+ 
+  // 使用预先分配的内存缓冲区创建存储. Allocator用于潜在的未来重新分配
+  // 但是如果存储不可避免，则allocator可以是nullptr
   // Creates storage with pre-allocated memory buffer. Allocator is given for
   // potential future reallocations, however it can be nullptr if the storage
   // is non-resizable
@@ -174,6 +177,7 @@ struct C10_API Storage {
   }
 
  protected:
+  // StorageImpl指针, storage_impl_包含Storage类的方法具体实现
   c10::intrusive_ptr<StorageImpl> storage_impl_;
 };
 
