@@ -615,8 +615,8 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
 
  public:
   /**
-   * 返回此张量对应的 DispatchKeySet，指定此张量标识的所有 DispatchKey。 
-     这是用于在该张量上进行 dispatch 操作的信息。
+   * 返回此张量对应的 DispatchKeySet，指定此张量标识的所有 DispatchKey.
+     这是用于在该张量上进行 dispatch 操作的信息.
      dispatch 调度基于设备类型和张量布局：比如是 CPU 张量还是 CUDA 张量，是有
      步幅的张量还是稀疏的张量。
    * Return the DispatchKeySet corresponding to this Tensor, specifying
