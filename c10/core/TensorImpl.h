@@ -2630,15 +2630,22 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   Storage storage_;
 
  private:
+  // 该指针指向一个 AutogradMeta 结构，该结构存储了 autograd 特定的字段（例如 
+  // grad_ / grad_fn_ / grad_accumulator_）。 这个指针总是拥有唯一的所有权（
+  // 意味着一次只有一个 TensorImpl 可以拥有它）。
   // This pointer points to an AutogradMeta struct that stores autograd-specific
   // fields (such as grad_ / grad_fn_ / grad_accumulator_). This pointer always
   // has unique ownership (meaning only one TensorImpl can own it at a time).
   //
+  // autograd_meta_ 可以是 nullptr，作为优化. 相当于有一个autograd_meta_指向一个默认
+  // 构造的AutogradMeta. 直观地说, 不需要 grad 的张量会将此字段设置为 null.
   // autograd_meta_ can be nullptr, as an optimization.  When this occurs, it is
   // equivalent to having an autograd_meta_ pointing to a default constructed
   // AutogradMeta; intuitively, tensors which don't require grad will have this
   // field set to null.
   //
+  // 这意味着autograd_meta_上的 accessors 必须谨慎测试是否有NULLPTR，并在这种情况下适当
+  // 处理默认行为。
   // This means accessors on autograd_meta_ have to be careful to test if they
   // got a nullptr, and handle default behavior appropriately in that case.
   //
@@ -2653,7 +2660,7 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
   //    2. autograd_meta_ is default constructed (semantically, same as (1))
   //    3. autograd_meta_ has nontrivial information content
   //
-  std::unique_ptr<c10::AutogradMetaInterface> autograd_meta_ = nullptr;
+  std::unique_ptr<c10::AutogradMetaInterface> autograd_meta_ = nullptr; // 包含autograd需要的信息
 
  protected:
   std::unique_ptr<c10::ExtraMeta> extra_meta_ = nullptr;
