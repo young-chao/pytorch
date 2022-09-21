@@ -158,10 +158,10 @@ struct C10_API AutogradMetaInterface {
       bool requires_grad,
       at::TensorImpl* self_impl) = 0;
   virtual bool requires_grad() const = 0; //是否需要计算梯度
-  virtual at::Tensor& mutable_grad() = 0; //
-  virtual const at::Tensor& grad() const = 0;
+  virtual at::Tensor& mutable_grad() = 0; //可变梯度引用
+  virtual const at::Tensor& grad() const = 0; //不可变梯度引用
   virtual const at::Tensor& fw_grad(uint64_t level, const at::TensorBase& self)
-      const = 0;
+      const = 0; //前向梯度???
   virtual void set_fw_grad(
       const at::TensorBase& new_grad,
       const at::TensorBase& self,
