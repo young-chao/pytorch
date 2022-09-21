@@ -28,6 +28,10 @@ inline void incref(intrusive_ptr_target* self);
 struct DontIncreaseRefcount {};
 } // namespace raw
 /**
+ * Intrucie_ptr <t>是shared_ptr <T>具有更好性能的替代方案，因为它侵入性地进行
+   引用计数（即在对象本身的成员中）。 你的class T需要从Intrucie_ptr_target继
+   承,以便将其用于Intrucie_ptr <t>。 你的类的构造函数不应允许'this'逃逸到其他
+   线程或从'this'创建一个intrusive_ptr。
  * intrusive_ptr<T> is an alternative to shared_ptr<T> that has better
  * performance because it does the refcounting intrusively
  * (i.e. in a member of the object itself).
@@ -76,15 +80,15 @@ class C10_API intrusive_ptr_target {
   //    atomically increment the use count, if it is greater than 0.
   //    If it is not, you must report that the storage is dead.
   //
-  mutable std::atomic<size_t> refcount_;
-  mutable std::atomic<size_t> weakcount_;
+  mutable std::atomic<size_t> refcount_; //该对象的强引用数量
+  mutable std::atomic<size_t> weakcount_; //该对象的弱引用数量
 
   template <typename T, typename NullType>
-  friend class intrusive_ptr;
+  friend class intrusive_ptr; //声明intrusive_ptr为友元类，便于管理强引用计数
   friend inline void raw::intrusive_ptr::incref(intrusive_ptr_target* self);
 
   template <typename T, typename NullType>
-  friend class weak_intrusive_ptr;
+  friend class weak_intrusive_ptr; //声明为友元类，便于管理弱引用计数
   friend inline void raw::weak_intrusive_ptr::incref(
       intrusive_ptr_target* self);
 
