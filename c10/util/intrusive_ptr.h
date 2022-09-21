@@ -84,11 +84,11 @@ class C10_API intrusive_ptr_target {
   mutable std::atomic<size_t> weakcount_; //该对象的弱引用数量
 
   template <typename T, typename NullType>
-  friend class intrusive_ptr; //声明intrusive_ptr为友元类，便于管理强引用计数
+  friend class intrusive_ptr; //声明intrusive_ptr为友元类，便于管理强引用计数refcount_
   friend inline void raw::intrusive_ptr::incref(intrusive_ptr_target* self);
 
   template <typename T, typename NullType>
-  friend class weak_intrusive_ptr; //声明为友元类，便于管理弱引用计数
+  friend class weak_intrusive_ptr; //声明为友元类，便于管理弱引用计数weakcount_
   friend inline void raw::weak_intrusive_ptr::incref(
       intrusive_ptr_target* self);
 
@@ -164,6 +164,7 @@ class C10_API intrusive_ptr_target {
 
  private:
   /**
+   * 当refcount为0时被调用. 可以覆盖该方法来释放昂贵的资源. 
    * This is called when refcount reaches zero.
    * You can override this to release expensive resources.
    * There might still be weak references, so your object might not get
@@ -221,6 +222,7 @@ inline size_t atomic_weakcount_decrement(std::atomic<size_t>& weakcount) {
 template <class TTarget, class NullType>
 class weak_intrusive_ptr;
 
+// 智能指针类，可管理intrusive_ptr_target类的强引用计数
 template <
     class TTarget,
     class NullType = detail::intrusive_target_default_null_type<TTarget>>
@@ -247,7 +249,7 @@ class intrusive_ptr final {
           value,
       "NullType::singleton() must return a element_type* pointer");
 
-  TTarget* target_;
+  TTarget* target_; // 由intrusive_ptr负责管理引用的类, 如StorageImpl和TensorImpl
 
   template <typename T>
   friend struct ExclusivelyOwnedTensorTraits;
@@ -265,6 +267,7 @@ class intrusive_ptr final {
   template <typename, typename...>
   friend class pybind11::class_;
 
+  // 增加引用计数
   void retain_() {
     if (target_ != NullType::singleton()) {
       size_t new_refcount =
@@ -275,6 +278,7 @@ class intrusive_ptr final {
     }
   }
 
+  // 销毁智能指针，减少引用计数，当引用计数为0时摧毁对象
   void reset_() noexcept {
     if (target_ != NullType::singleton() &&
         detail::atomic_refcount_decrement(target_->refcount_) == 0) {
@@ -402,7 +406,8 @@ class intrusive_ptr final {
   TTarget* get() const noexcept {
     return target_;
   }
-
+  
+  // 重载运算符使其能当作正常指针使用
   TTarget& operator*() const noexcept {
     return *target_;
   }
@@ -567,6 +572,7 @@ class intrusive_ptr final {
   }
 };
 
+// 用于构造智能指针
 template <
     class TTarget,
     class NullType = detail::intrusive_target_default_null_type<TTarget>,
@@ -662,6 +668,7 @@ struct MaybeOwnedTraits<c10::intrusive_ptr<T>> {
   }
 };
 
+// 智能指针类，可管理intrusive_ptr_target类的弱引用计数
 template <
     typename TTarget,
     class NullType = detail::intrusive_target_default_null_type<TTarget>>
