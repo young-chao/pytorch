@@ -10,17 +10,21 @@
 
 namespace c10 {
 
+// DataPtr 是指向某个内存的唯一指针（带有附加的删除器和删除器的一些上下文）,
+// 它还记录其数据的设备. 
 // A DataPtr is a unique pointer (with an attached deleter and some
 // context for the deleter) to some memory, which also records what
 // device is for its data.
 //
+// nullptr DataPtrs 仍然可以有一个非默认的设备. 这允许我们将零大小分配与
+// 非零分配一视同仁。
 // nullptr DataPtrs can still have a nontrivial device; this allows
 // us to treat zero-size allocations uniformly with non-zero allocations.
 //
 class C10_API DataPtr {
  private:
-  c10::detail::UniqueVoidPtr ptr_;
-  Device device_;
+  c10::detail::UniqueVoidPtr ptr_; //类似unique_ptr的指针, 但只指向void类型
+  Device device_; //设备信息（设备类型+设备索引）
 
  public:
   // Choice of CPU here is arbitrary; if there's an "undefined" device
