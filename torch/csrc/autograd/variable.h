@@ -166,12 +166,10 @@ TORCH_API std::shared_ptr<Node> try_get_grad_accumulator(const Variable&);
 /// create one on the fly and return it.
 TORCH_API std::shared_ptr<Node> grad_accumulator(const Variable&);
 
-/// 返回此 `Variable` 的“规范”梯度边缘，即，如果这是内部 `Variable`，则返回梯度
-/// 函数，否则返回梯度累加器。 如果 `Variable` 是内部的，则返回的 `Edge` 将存储
-/// 此变量连接到的 `Node` 的输入索引在其 `input_nr` 字段中。 对于叶子， `input_nr` 
-/// 始终为零。 请注意，`set_gradient_edge` 和 `gradient_edge` 不是对称的。 您
-/// 必须使用 `set_gradient_edge` 来设置 `grad_fn`, 使用 `set_grad_accumulator` 
-/// 来设置 `grad_accumulator` 。
+/// 中间节点返回 Edge(grad_fn, output_nr), 叶子节点返回 Edge(grad_accumulator, 0)
+/// 注意：`set_gradient_edge` 和 `gradient_edge` 不是对称的:
+/// 1) 使用 `set_gradient_edge` 来设置 `grad_fn` 和 `output_nr_`
+/// 2) 使用 `set_grad_accumulator` 来设置 `grad_accumulator` 
 /// Returns the "canonical" gradient edge of this `Variable`, i.e. either the
 /// gradient function if this is an interior `Variable`, or the gradient
 /// accumulator otherwise. If the `Variable` is interior, the returned `Edge`
