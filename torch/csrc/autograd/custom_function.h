@@ -30,9 +30,16 @@ TORCH_API void check_variable_result(
 template <typename X, typename... Args>
 using forward_t = decltype(X::forward(nullptr, std::declval<Args>()...));
 
+/// 要使用自定义 autograd 操作，请实现具有静态前向和后向函数的 Function 子类
 /// To use custom autograd operations, implement a Function subclass with
 /// static forward and backward functions:
 ///
+/// `forward` 可以接受任意数量的参数，并且应该返回变量列表或变量。
+/// 任何Variable参数的使用都将在计算图中注册，但是vectors/sets 或者其他数据结构不会遍历注册。
+/// 可以使用 c10::optional<Tensor> 作为参数之一，如果参数有值，它将在图中注册为变量。
+/// 应该将指向 `torch::autograd::AutogradContext` 的指针作为第一个参数。
+/// 1) 变量可以使用 `ctx->save_for_backward` 保存在 `ctx` 中
+/// 2) 其他数据以 `<std::string, at::IValue>` 形式保存在 `ctx->saved_data` 中
 /// `forward` can take as many arguments as you want and should return either a
 /// variable list or a Variable. Use of any direct Variable arguments will be
 /// registered in the graph but no vectors/sets or any other data structures
@@ -46,6 +53,11 @@ using forward_t = decltype(X::forward(nullptr, std::declval<Args>()...));
 /// (see `torch::autograd::AutogradContext::saved_data`)
 /// in the form of `<std::string, at::IValue>` pairs.
 ///
+/// `backward` 应该接受一个指向 `torch::autograd::AutogradContext` 的指针和一个
+/// 变量列表，其中包含与 `forward` 的输出一样多的变量作为参数。 它应该返回与输入一
+/// 样多的变量，其中每个变量都包含输入对应的梯度。 
+/// 1) 保存在 `forward` 中的变量可以通过 `ctx->get_saved_variables` 访问
+/// 2) 其他保存的数据可以通过 `ctx->saved_data` 访问
 /// `backward` should take a pointer to `torch::autograd::AutogradContext`
 /// and a variable list containing as many Variables as there were outputs from
 /// `forward` as arguments. It should return as many Variables as there were
@@ -96,6 +108,8 @@ struct TORCH_API Function {
       -> std::enable_if_t<std::is_same<X, T>::value, forward_t<X, Args...>>;
 };
 
+/// AutogradContext 是操作 autograd 的上下文，负责存储在前向过程中产生的信息，
+/// 以便在后向传播中可以访问。
 /// Context to save information during `forward` that can be accessed in
 /// `backward` in custom autograd operations (see `torch::autograd::Function`
 /// for details).
@@ -105,10 +119,12 @@ struct TORCH_API AutogradContext {
   AutogradContext(const AutogradContext& other) = delete;
   AutogradContext& operator=(const AutogradContext& other) = delete;
 
+  /// 存储非变量数据以便后向传播时使用
   /// Can be used to save non-variable data for `backward`.
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   ska::flat_hash_map<std::string, at::IValue> saved_data;
 
+  /// 存储变量列表以便后向传播调用
   /// Saves the list of variables for a future call to `backward`. This
   /// should be called at most once from inside of `forward`.
   void save_for_backward(variable_list to_save);
@@ -120,6 +136,8 @@ struct TORCH_API AutogradContext {
   /// called at most once from inside of `forward` and all arguments should be
   /// outputs.
   void mark_non_differentiable(const variable_list& outputs);
+  
+  // 设置在调用后向函数之前是否应将未定义的输出梯度张量扩展为全0张量。
   // Sets whether undefined output grad tensors should be expanded to tensors
   // full of zeros before calling backward function. Default value is true.
   void set_materialize_grads(bool value);
