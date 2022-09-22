@@ -135,6 +135,8 @@ struct DifferentiableViewMeta;
 // on Tensor proper
 namespace impl {
 
+// 这可能会返回一个 nullptr. 如果您需要 AutogradMeta 返回结构，请改用 
+// materialize_autograd_meta.
 // WARNING: This may return a nullptr.  If you require AutogradMeta to return
 // a materialized structure, use materialize_autograd_meta instead.
 TORCH_API AutogradMeta* get_autograd_meta(const at::TensorBase&);
@@ -142,11 +144,13 @@ TORCH_API AutogradMeta* get_autograd_meta(const at::TensorBase&);
 // WARNING: This will return a nullptr if the Tensor is not a view.
 TORCH_API DifferentiableViewMeta* get_view_autograd_meta(const at::TensorBase&);
 
+// 返回当前的 autograd meta，如果之前没有，则将其具体化。
 // Returns the current autograd meta, materializing it if it was previously
 // none.  This counts as a *mutating* operation, so do not call it on
 // "read-only" operators; in particular, this is NOT thread safe
 TORCH_API AutogradMeta* materialize_autograd_meta(const at::TensorBase&);
 
+/// 设置梯度累加器（叶子张量）
 /// Set the gradient accumulator of the `Variable`. This is only applicable to
 /// leaf variables. Interior variables should call `set_gradient_edge()`.
 TORCH_API void set_grad_accumulator(
@@ -162,6 +166,12 @@ TORCH_API std::shared_ptr<Node> try_get_grad_accumulator(const Variable&);
 /// create one on the fly and return it.
 TORCH_API std::shared_ptr<Node> grad_accumulator(const Variable&);
 
+/// 返回此 `Variable` 的“规范”梯度边缘，即，如果这是内部 `Variable`，则返回梯度
+/// 函数，否则返回梯度累加器。 如果 `Variable` 是内部的，则返回的 `Edge` 将存储
+/// 此变量连接到的 `Node` 的输入索引在其 `input_nr` 字段中。 对于叶子， `input_nr` 
+/// 始终为零。 请注意，`set_gradient_edge` 和 `gradient_edge` 不是对称的。 您
+/// 必须使用 `set_gradient_edge` 来设置 `grad_fn`, 使用 `set_grad_accumulator` 
+/// 来设置 `grad_accumulator` 。
 /// Returns the "canonical" gradient edge of this `Variable`, i.e. either the
 /// gradient function if this is an interior `Variable`, or the gradient
 /// accumulator otherwise. If the `Variable` is interior, the returned `Edge`
@@ -172,6 +182,7 @@ TORCH_API std::shared_ptr<Node> grad_accumulator(const Variable&);
 /// `set_grad_accumulator` to set the accumulator.
 TORCH_API Edge gradient_edge(const Variable&);
 
+/// 设置梯度边（非叶子张量） -- `Variable`的 `grad_fn`和`input_nr`
 /// Set the gradient edge -- i.e. `grad_fn` and `input_nr` -- of the
 /// `Variable`.
 /// NOTE: This will always set the `grad_fn`, even if this is a leaf variable,
@@ -227,9 +238,9 @@ TORCH_API void create_cpp_hook(const at::TensorBase&);
 struct TORCH_API AutogradMeta : public c10::AutogradMetaInterface {
   std::string name_;
 
-  Variable grad_;
-  std::shared_ptr<Node> grad_fn_;
-  std::weak_ptr<Node> grad_accumulator_;
+  Variable grad_; //梯度信息
+  std::shared_ptr<Node> grad_fn_; //Node实例，中间节点用于存储计算来源
+  std::weak_ptr<Node> grad_accumulator_; //Node实例，叶节点用于累加梯度
 
   // This field is used to store all the forward AD gradients
   // associated with this AutogradMeta (and the Tensor it corresponds to)
@@ -245,16 +256,20 @@ struct TORCH_API AutogradMeta : public c10::AutogradMetaInterface {
   std::vector<std::shared_ptr<FunctionPreHook>> hooks_;
   std::shared_ptr<hooks_list> cpp_hooks_list_;
 
+  // 只对叶子变量有意义，此Variable是否需要grad，其它变量必须为false。
   // Only meaningful on leaf variables (must be false otherwise)
   bool requires_grad_;
 
+  // 只对非叶子变量有意义，是否需要保持图，其它必须为-1
   // Only meaningful on non-leaf variables (must be -1 otherwise)
   // The value of retains_grad_ indicates the index of it in cpp_hooks_list_
   // A value of -1 indicates that the tensor does not retain grad
   int64_t retains_grad_;
 
+  // 此Variable是否是一个View（没有实际存储，这是基于base的Variable）
   bool is_view_;
 
+  // 该Variable是某一个函数的输出，output_nr_ 记录它是第几个输出
   // The "output number" of this variable; e.g., if this variable
   // was the second output of a function, then output_nr == 1.
   // We use this to make sure we can setup the backwards trace
@@ -302,6 +317,9 @@ struct TORCH_API AutogradMeta : public c10::AutogradMetaInterface {
       uint64_t level,
       bool is_inplace_op) override;
 
+  // gradient_edge 参数类型为 Edge
+  // gradient_edge.function 就被赋值给AutogradMeta 的 grad_fn
+  // gradient_edge.input_nr 被赋值给 AutoGradMeta 的 output_nr
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
   AutogradMeta(
       at::TensorImpl* self_impl = nullptr,
@@ -383,10 +401,14 @@ struct TORCH_API ViewInfo {
 
 /// NOTE [ Autograd View Variables ]
 ///
+/// 许多操作返回与输入变量共享存储的变量。 返回的变量被称为在输入 **base** 变量上的
+/// **view** 变量。
 /// Many operations return Variable that shares storage with an input Variable.
 /// The returned Variable is called a **view** Variable on the input **base**
 /// Variable.
 ///
+/// 在 PyTorch 中，我们有两种视图：可微视图和不可微视图。 在任何一种类型中，
+/// 为了支持正确的版本检查，基变量和视图变量必须始终共享相同的 version_counter。
 /// In PyTorch, we have two types of views: differentiable views, and
 /// non-differentiable views. In either type, to support proper version
 /// checking, the base and view Variables must always share the same
@@ -756,6 +778,8 @@ inline Variable make_variable_non_differentiable_view(
   return Variable();
 }
 
+/// 从给定的 `Tensor` 创建一个 `Variable`，复制其底层 `TensorImpl`。 `requires_grad` 
+/// 应该只为叶子设置，并确定 `Variable` 是否会累加梯度。
 /// Creates a `Variable` from the given `Tensor`, copying its underlying
 /// `TensorImpl`. `requires_grad` should be set only for leaves, and determines
 /// whether the `Variable` will accumulate gradients. NOTE: `data` must *not* be
