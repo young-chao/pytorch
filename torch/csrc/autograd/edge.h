@@ -11,6 +11,7 @@ namespace autograd {
 
 struct Node;
 
+/// 表示函数的特定输入。
 /// Represents a particular input of a function.
 struct Edge {
   Edge() noexcept : function(nullptr), input_nr(0) {}
@@ -32,9 +33,11 @@ struct Edge {
     return !(*this == other);
   }
 
+  /// 当前边指向的反向传播函数节点。
   /// The function this `Edge` points to.
   std::shared_ptr<Node> function;
 
+  /// 函数的特定输入的标识符。
   /// The identifier of a particular input to the function.
   uint32_t input_nr;
 };
