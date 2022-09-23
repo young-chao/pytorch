@@ -61,7 +61,7 @@ class NodeGuard {
  /*
  `Node` 是一个抽象类，它表示一个操作，该操作采用零个或多个输入`Variable` 
  并产生零个或多个输出`Variable`。 
- PyTorch 的 autograd 机器中的所有函数都派生自这个类并覆盖它的 `apply` 方法。 
+ PyTorch 的 autograd 过程中的所有函数都派生自这个类并覆盖它的 `apply` 方法。 
  然后可以通过调用运算符调用此类子类的实例。
  */
 // A `Node` is an abstract class that represents an operation taking zero
@@ -92,9 +92,8 @@ class NodeGuard {
 /*
 子类通常表示可微函数及其梯度算子。 但是请注意，由于 `Node` 接受*0*个或更多输入并产生 
 *0*个或更多输出的非常笼统的定义，`Node` 的使用是灵活的，并且超出了纯数学运算的范围。 
-例如，`AccumulateGrad` 函数是一个 *sink*：它接受一个输入，但不产生输出，
-而是累积输入作为副作用。 在另一个极端，“GraphRoot”函数不接收来自其他函数的输入，
-但会产生多个输出。
+例如，'AccumulateGrad' 函数是一个 *sink*：它接受一个输入，但不产生输出，而是累加
+输入。 在另一个极端，'GraphRoot'函数不接收来自其他函数的输入，但会产生多个输出。
 */
 // Subclasses usually represent differentiable functions as well as their
 // gradient operators. Note, however, that due to the very general definition
@@ -108,8 +107,8 @@ class NodeGuard {
 //                              Interface
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /*
-`Node`上最重要的方法是调用运算符，它接收变量列表并生成变量列表。这些列表的精确大小
-可以通过 `num_inputs()` 和 `num_outputs()` 确定。 `Node`s 通过它们的 `next_edge` 
+`Node`上最重要的方法是operator()方法，它接收变量列表并生成变量列表。这些列表的精确
+大小可以通过`num_inputs()`和`num_outputs()` 确定。`Node`s 通过它们的 `next_edge` 
 接口缝合在一起，这让您可以操作 `Node` 的输出边集。您可以使用 `add_next_edge()` 添
 加一条边，使用 `next_edge(index)` 检索一条边，并通过 `next_edges()` 方法对其进行
 迭代。其他方法可用于与 JIT 和 PyTorch 的其他部分集成。每个 `Node` 都有一个 
@@ -137,8 +136,7 @@ class NodeGuard {
 // See NOTE [ Sequence Number] for more details on the usages of sequence
 // number.
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// PyTorch的autograd机制中，所有函数都派生自此类，并重写其'apply'方法。
-// 这样子类的实例就可以通过call操作符调用。
+// PyTorch中所有用于反向传播计算的函数都继承自Node类，并重写Node类中的apply纯虚函数。
 struct TORCH_API Node : std::enable_shared_from_this<Node> {
  public:
   /// Construct a new `Node` with the given `next_edges`
@@ -178,7 +176,7 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
   Node& operator=(Node&& other) = delete;
   virtual ~Node() = default;
 
-  /// 在给定的输入上评估function并返回函数调用的结果, 利用apply方法执行操作.
+  /// Node的主要方法. 对运算符()进行重载，核心是调用apply()方法.
   /// Evaluates the function on the given inputs and returns the result of the
   /// function call.
   variable_list operator()(variable_list&& inputs) {
@@ -337,8 +335,13 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
 
   /// NOTE [ Sequence Number]
   ///
+  /// 该变量用于将网络中的后向节点与前向操作关联起来，并且在引擎中提供确定信息。
+  /// sequence_nr_ 随着Function实例的不断构建而单调增长
   /// The sequence_nr has two main usages in autograd:
   ///
+  /// 1) 帮助确定节点在引擎中的执行优先级。在所有其他条件相同的情况下，优先级较高的节
+  ///    点将首先执行。因此，前向传播时后执行的操作就是后向传播之中先执行的操作。
+  ///    对于AccumulateGrad节点，我们将sequence_nr显式地设置为UINT64_MAX。
   /// 1) Helps determine the node's execution priority in the engine.
   ///    All else being equal, nodes with higher priority numbers are executed
   ///    first. Thus, nodes corresponding to ops executed later are the first to
@@ -569,11 +572,13 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
   /// Calls `apply()`, but instruments it with tracing machinery.
   variable_list traced_apply(variable_list inputs);
 
+  // 该变量用于将网络中的后向节点与前向操作关联起来，并且在引擎中提供确定信息。
   // Sequence number used to correlate backward nodes with forward ops in the
   // profiler and provide determinisim in the engine.
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   const uint64_t sequence_nr_;
-
+ 
+  // '节点'的拓扑顺序号，表示从该节点到任何叶节点的最长可能路径的长度。
   // See NOTE [ Topological Number ]
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   uint64_t topological_nr_ = 0;
@@ -633,6 +638,7 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   std::mutex mutex_;
 
+  // 在前向过程中与该算子(Node)相关联的边。
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   edge_list next_edges_;
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
@@ -643,6 +649,7 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
   std::vector<std::unique_ptr<FunctionPreHook>> pre_hooks_;
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   std::vector<std::unique_ptr<FunctionPostHook>> post_hooks_;
+  // 输入数据的元信息
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   at::SmallVector<InputMetadata, 2> input_metadata_;
 };
