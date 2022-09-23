@@ -108,7 +108,7 @@ class NodeGuard {
 //                              Interface
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /*
-`Node`上最重要的方法是call运算符，它接收变量列表并生成变量列表。这些列表的精确大小
+`Node`上最重要的方法是调用运算符，它接收变量列表并生成变量列表。这些列表的精确大小
 可以通过 `num_inputs()` 和 `num_outputs()` 确定。 `Node`s 通过它们的 `next_edge` 
 接口缝合在一起，这让您可以操作 `Node` 的输出边集。您可以使用 `add_next_edge()` 添
 加一条边，使用 `next_edge(index)` 检索一条边，并通过 `next_edges()` 方法对其进行
@@ -137,6 +137,8 @@ class NodeGuard {
 // See NOTE [ Sequence Number] for more details on the usages of sequence
 // number.
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// PyTorch的autograd机制中，所有函数都派生自此类，并重写其'apply'方法。
+// 这样子类的实例就可以通过call操作符调用。
 struct TORCH_API Node : std::enable_shared_from_this<Node> {
  public:
   /// Construct a new `Node` with the given `next_edges`
@@ -168,6 +170,7 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
             /*sequence_nr=*/at::sequence_number::get_and_increment(),
             std::move(next_edges)) {}
 
+  /// 节点既无法copy也不可move
   /// Nodes are neither copyable nor moveable.
   Node(const Node& other) = delete;
   Node(Node&& other) = delete;
@@ -175,6 +178,7 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
   Node& operator=(Node&& other) = delete;
   virtual ~Node() = default;
 
+  /// 在给定的输入上评估function并返回函数调用的结果, 利用apply方法执行操作.
   /// Evaluates the function on the given inputs and returns the result of the
   /// function call.
   variable_list operator()(variable_list&& inputs) {
@@ -355,10 +359,16 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
 
   // NOTE [ Topological Number ]
   //
+  // topological_nr 用于在autograd发现期间修剪DAG中的分支，因为维护 topological_nr 
+  // 有助于我们以O(1)的复杂度检查两个节点之间是否不存在有向路径。
   // topological_nr is used to prune branches in the DAG during autograd
   // discovery as maintaining topological_nr helps us check in O(1) if there
   // does NOT exist a directed path between two nodes.
   //
+  // 此'Node'的拓扑序号表示从该节点到任何叶节点的最长可能路径的长度。 如果您是叶节点，
+  // 即AccumulateGrad，则此值为零。 该值具有以下性质：对于 G 中的每一对节点 X、Y，存
+  // 在从 X 到 Y 的有向路径意味着 topo_nr(X) > topo_nr(Y)。 然而，反之则不成立，因
+  // 此我们不能证明从 X 到 Y 的路径存在，只能证明不存在。
   // The topological order number of this `Node` representing the length of the
   // longest possible path from this Node to any leaf node. If you are leaf
   // node, aka AccumulateGrad, this will be zero. This value has the property
