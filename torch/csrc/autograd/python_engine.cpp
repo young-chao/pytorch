@@ -164,6 +164,7 @@ c10::intrusive_ptr<at::ivalue::Future> PythonEngine::execute_with_graph_task(
 
 PyObject* THPEngineClass = nullptr;
 
+// 计算给定张量相对于图中叶子节点的梯度总和。
 // Implementation of torch._C._EngineBase.run_backward
 PyObject* THPEngine_run_backward(
     PyObject* self,
@@ -171,13 +172,13 @@ PyObject* THPEngine_run_backward(
     PyObject* kwargs) {
   HANDLE_TH_ERRORS
   // 对输入的参数进行解析，初始化相关的变量
-  PyObject* tensors = nullptr; //准备计算导数的张量
-  PyObject* grad_tensors = nullptr; //对应张量的每个元素的梯度
+  PyObject* tensors = nullptr; //准备计算相对叶节点导数的张量. python中使用loss.backward调用时即为loss
+  PyObject* grad_tensors = nullptr; //对应计算导数的每个张量的当前梯度（可理解为默认全1），最后会汇进叶张量的总梯度中（乘积）
   unsigned char keep_graph = 0; //如果为True，用于计算grad的图将不会立刻释放，可以进行多次backward
   unsigned char create_graph = 0; //如果为True，将构造导数图，允许计算高阶导数
   PyObject* inputs = nullptr; //需要计算梯度的叶子张量列表，如果为空则全部计算
   unsigned char allow_unreachable = 0; //
-  unsigned char accumulate_grad = 0; //指示是否将 grad 累积到叶张量中或捕获
+  unsigned char accumulate_grad = 0; //指示是否将 grad 累加到叶张量中或捕获
   const char* accepted_kwargs[] = {// NOLINT
                                    "tensors",
                                    "grad_tensors",
@@ -241,7 +242,7 @@ PyObject* THPEngine_run_backward(
         "element %d of tensors "
         "tuple is not a Tensor",
         i);
-    const auto& variable = THPVariable_Unpack(_tensor);
+    const auto& variable = THPVariable_Unpack(_tensor); //将THPVariable指针解包为该指针指向实例包含的cdata的引用,即at::Tensor
     TORCH_CHECK(
         !isBatchedTensor(variable),
         "torch.autograd.grad(outputs, inputs, grad_outputs) called inside ",
