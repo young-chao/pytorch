@@ -177,9 +177,9 @@ PyObject* THPEngine_run_backward(
   PyObject* grad_tensors = nullptr; //构造出的变量L关于原变量tensor的梯度（默认全1），会以乘积形式影响叶张量的总梯度
   unsigned char keep_graph = 0; //如果为True，用于计算grad的图将不会立刻释放，可以进行多次backward
   unsigned char create_graph = 0; //如果为True，将构造导数图，允许计算高阶导数
-  PyObject* inputs = nullptr; //需要计算梯度的叶子张量列表，如果为空则全部计算
+  PyObject* inputs = nullptr; //需要计算梯度的张量列表（可包括中间节点），如果为空则计算全部叶子张量
   unsigned char allow_unreachable = 0; //
-  unsigned char accumulate_grad = 0; //指示是否将 grad 累加到叶张量中或捕获
+  unsigned char accumulate_grad = 0; //指示是否将grad累加到叶张量中或捕获
   const char* accepted_kwargs[] = {// NOLINT
                                    "tensors",
                                    "grad_tensors",
@@ -221,7 +221,8 @@ PyObject* THPEngine_run_backward(
       "gradients",
       num_tensors,
       num_gradients);
-
+  
+  // 调用autograd.backward(...)时为True;调用autograd.grad(...)时为False.
   // The user either called autograd.backward(...) or autograd.grad(...) to get
   // here
   bool backward_api_called = accumulate_grad;
@@ -287,7 +288,7 @@ PyObject* THPEngine_run_backward(
   }
 
   std::vector<Edge> output_edges;
-  if (inputs != nullptr) {
+  if (inputs != nullptr) { //当inputs给定，记录需要计算梯度的张量的梯度边（含grad_fn或grad_accumulator）
     int num_inputs = PyTuple_GET_SIZE(inputs);
     output_edges.reserve(num_inputs);
     for (const auto i : c10::irange(num_inputs)) {
@@ -309,10 +310,10 @@ PyObject* THPEngine_run_backward(
       const auto output_nr = tensor.output_nr();
       auto grad_fn = tensor.grad_fn();
       if (!grad_fn) {
-        grad_fn = torch::autograd::impl::try_get_grad_accumulator(tensor);
+        grad_fn = torch::autograd::impl::try_get_grad_accumulator(tensor); //如果autograd_meta_为空，则返回null_ptr
       }
       if (accumulate_grad) {
-        tensor.retain_grad();
+        tensor.retain_grad(); //对非叶节点张量(即中间节点张量)启用用于保存梯度(.grad)
       }
       THPUtils_assert(
           tensor.requires_grad(),
@@ -324,7 +325,7 @@ PyObject* THPEngine_run_backward(
         // nodes in the graph (e.g., mul when an operand is scalar) that have
         // edges pointing to nullptr don't get erroneously assigned `needed =
         // True` in exec_info.
-        output_edges.emplace_back(std::make_shared<Identity>(), 0);
+        output_edges.emplace_back(std::make_shared<Identity>(), 0); //grad_fn为空，说明为不需要计算梯度的叶张量
       } else {
         output_edges.emplace_back(grad_fn, output_nr);
       }
@@ -336,9 +337,11 @@ PyObject* THPEngine_run_backward(
     pybind11::gil_scoped_release no_gil;
     auto& engine = python::PythonEngine::get_python_engine();
     outputs = engine.execute(
-        roots, grads, keep_graph, create_graph, accumulate_grad, output_edges);
+        roots, grads, keep_graph, create_graph, accumulate_grad, output_edges); //调用python_engine执行backward
   }
 
+  // 调用autograd.grad且指定inputs时返回py_outputs
+  // py_outputs为带grad_fn的张量梯度信息
   if (!backward_api_called && inputs != nullptr) {
     int num_inputs = PyTuple_GET_SIZE(inputs);
     THPObjectPtr py_outputs{PyTuple_New(num_inputs)};
@@ -355,7 +358,7 @@ PyObject* THPEngine_run_backward(
     }
     return py_outputs.release();
   } else {
-    Py_RETURN_NONE;
+    Py_RETURN_NONE; //调用autograd.backward时返回值为None
   }
   END_HANDLE_TH_ERRORS
 }
