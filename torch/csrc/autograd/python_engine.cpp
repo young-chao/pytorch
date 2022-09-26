@@ -172,8 +172,9 @@ PyObject* THPEngine_run_backward(
     PyObject* kwargs) {
   HANDLE_TH_ERRORS
   // 对输入的参数进行解析，初始化相关的变量
+  // 若tensor不是一个标量，那么就先构造一个标量的值：L = torch.sum(tensor*grad_tensor)，再关于L对各个叶子张量计算梯度
   PyObject* tensors = nullptr; //准备计算相对叶节点导数的张量. python中使用loss.backward调用时即为loss
-  PyObject* grad_tensors = nullptr; //对应计算导数的每个张量的当前梯度（可理解为默认全1），最后会汇进叶张量的总梯度中（乘积）
+  PyObject* grad_tensors = nullptr; //构造出的变量L关于原变量tensor的梯度（默认全1），会以乘积形式影响叶张量的总梯度
   unsigned char keep_graph = 0; //如果为True，用于计算grad的图将不会立刻释放，可以进行多次backward
   unsigned char create_graph = 0; //如果为True，将构造导数图，允许计算高阶导数
   PyObject* inputs = nullptr; //需要计算梯度的叶子张量列表，如果为空则全部计算
@@ -252,11 +253,13 @@ PyObject* THPEngine_run_backward(
         " is being vmapped over). Please "
         "call autograd.grad() outside torch.vmap or file a bug report "
         "with your use case.")
+    // 获取结果张量的梯度边（梯度边一定唯一，一个张量只能是一个操作的直接输出）
     auto gradient_edge = torch::autograd::impl::gradient_edge(variable);
     THPUtils_assert(
         gradient_edge.function,
         "element %d of tensors does not require grad and does not have a grad_fn",
         i);
+    // 梯度边存入roots
     roots.push_back(std::move(gradient_edge));
 
     PyObject* grad = PyTuple_GET_ITEM(grad_tensors, i);
@@ -270,6 +273,7 @@ PyObject* THPEngine_run_backward(
             "will be ignored. In practice all computed gradients will still be correct "
             "according to regular tensor semantics.");
       }
+      // 当前tensor相对L的梯度存入grads
       grads.push_back(grad_var);
     } else {
       THPUtils_assert(
