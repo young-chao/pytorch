@@ -170,14 +170,14 @@ PyObject* THPEngine_run_backward(
     PyObject* args,
     PyObject* kwargs) {
   HANDLE_TH_ERRORS
-  PyObject* tensors = nullptr;
-  PyObject* grad_tensors = nullptr;
-  unsigned char keep_graph = 0;
-  unsigned char create_graph = 0;
-  PyObject* inputs = nullptr;
-  unsigned char allow_unreachable = 0;
-  unsigned char accumulate_grad =
-      0; // 指示是否将 grad 累积到叶张量中或捕获
+  // 对输入的参数进行解析，初始化相关的变量
+  PyObject* tensors = nullptr; //准备计算导数的张量
+  PyObject* grad_tensors = nullptr; //对应张量的每个元素的梯度
+  unsigned char keep_graph = 0; //如果为True，用于计算grad的图将不会立刻释放，可以进行多次backward
+  unsigned char create_graph = 0; //如果为True，将构造导数图，允许计算高阶导数
+  PyObject* inputs = nullptr; //需要计算梯度的叶子张量列表，如果为空则全部计算
+  unsigned char allow_unreachable = 0; //
+  unsigned char accumulate_grad = 0; //指示是否将 grad 累积到叶张量中或捕获
   const char* accepted_kwargs[] = {// NOLINT
                                    "tensors",
                                    "grad_tensors",
@@ -229,6 +229,7 @@ PyObject* THPEngine_run_backward(
       "please call backward() outside torch.vmap or instead use "
       "torch.autograd.grad inside torch.vmap");
 
+  // 把网络最终输出节点的信息放入roots和grads作为后续反向求导的开始
   edge_list roots;
   roots.reserve(num_tensors);
   variable_list grads;
