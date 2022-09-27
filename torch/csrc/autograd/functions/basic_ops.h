@@ -68,6 +68,9 @@ struct TORCH_API UndefinedGradBackward : public Node {
   variable_list apply(variable_list&& inputs) override;
 };
 
+// 初始根节点指torch.autograd.backward中的tensors或torch.autograd.grad中的outputs
+// autograd过程的根节点定义，若初始根节点不止一个则构建一个虚拟的根节点GraphRoot
+// functions为根节点的边集合，inputs为每个初始根节点张量的梯度
 struct TORCH_API GraphRoot : public Node {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
   GraphRoot(edge_list functions, variable_list inputs)
@@ -76,14 +79,16 @@ struct TORCH_API GraphRoot : public Node {
     // stream(s) on devices of root grad tensors at the time the instance is
     // constructed.
     for (const auto& t : outputs) {
-      add_input_metadata(t);
+      add_input_metadata(t); // 将初始根节点的梯度信息存入虚拟根节点的input_metadata_中
     }
   }
 
+  // 返回初始根节点的梯度，即inputs
   variable_list apply(variable_list&& inputs) override {
     return outputs;
   }
 
+  // 记录初始根节点的梯度
   variable_list outputs;
 };
 
