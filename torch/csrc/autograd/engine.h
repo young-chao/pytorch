@@ -226,6 +226,9 @@ struct TORCH_API Engine {
   // Ensures device_ready_queues_ are initialized only once
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   c10::once_flag start_device_threads_flag_;
+  
+  // ReadyQueue列表。device_ready_queues_ 之中的每一个ReadyQueue都启动了一个工作线程。
+  // 各个线程之间通过 device_ready_queues_ 来进行交互。
   // Safe to read device_ready_queues_ without synchronization after
   // initialization
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
@@ -241,6 +244,7 @@ struct TORCH_API Engine {
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   int max_recursion_depth_;
 
+  // 线程池
   struct ThreadPoolShared {
     // Data structures used by the threads for executing reentrant backwards
     // tasks. See Note [Reentrant backwards]
@@ -264,7 +268,7 @@ struct TORCH_API Engine {
   // leaked when Engine shuts down, so there may be threads waiting on work_ for
   // the graphtasks_queue_ to be nonempty.
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
-  std::shared_ptr<ThreadPoolShared> thread_pool_shared_;
+  std::shared_ptr<ThreadPoolShared> thread_pool_shared_; //线程池，用来多线程处理后向传播
 
  private:
   // Number of non-reentrant threads
