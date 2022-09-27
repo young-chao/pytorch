@@ -325,9 +325,9 @@ PyObject* THPEngine_run_backward(
         // nodes in the graph (e.g., mul when an operand is scalar) that have
         // edges pointing to nullptr don't get erroneously assigned `needed =
         // True` in exec_info.
-        output_edges.emplace_back(std::make_shared<Identity>(), 0); //grad_fn为空，说明为不需要计算梯度的叶张量
+        output_edges.emplace_back(std::make_shared<Identity>(), 0); //grad_fn为空，为叶张量
       } else {
-        output_edges.emplace_back(grad_fn, output_nr);
+        output_edges.emplace_back(grad_fn, output_nr); //grad_fn不为空，为中间节点
       }
     }
   }
