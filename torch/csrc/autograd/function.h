@@ -638,7 +638,8 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   std::mutex mutex_;
 
-  // 在前向过程中与该算子(Node)相关联的边。
+  // 在前向过程中与该算子(Node)相关联的边。Tensors_old经历next_edges生成执行当前操作的Tensor
+  // 反向的next_edges_，在前向中比当前Node代表的操作更早执行
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
   edge_list next_edges_;
   // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
