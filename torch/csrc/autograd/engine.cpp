@@ -75,6 +75,7 @@ inline bool should_run_in_cpu_ready_queue(c10::DeviceType device) {
 }
 } // namespace
 
+// engine产生的线程被分配一个“worker_device”，指定它们处理的工作设备。
 // Threads spawned by the engine are assigned a 'worker_device' specifying
 // what device they process work for. This variable is initialized at:
 // 1. thread creation time for CUDA, XLA device threads, as they are
@@ -105,6 +106,9 @@ static thread_local int total_depth = 0;
 C10_DEFINE_TLS_static(std::shared_ptr<GraphTask>, tls_current_graph_task);
 #define current_graph_task (tls_current_graph_task.get())
 
+// 每个autograd工作线程都与一个就绪队列相关联，该队列指定该线程要执行的工作流。 
+// 这个shared_ptr是一个thread_local指针，指向每个线程的ready_queue，它应该在
+// 执行前通过每个对应线程中的Engine::init_local_ready_queue()调用来初始化。
 // Every autograd worker thread is associated with a ready queue, which
 // specifies the stream of work of this thread to do. This shared_ptr is a
 // thread_local pointer to each thread's ready_queue, and it should be
@@ -121,6 +125,16 @@ C10_DEFINE_TLS_static(std::shared_ptr<GraphTask>, tls_current_graph_task);
 // because we reached the maximum depth, the new thread will just reuse the same
 // ReadyQueue with the parent thread for performance improvement.
 // see Note [Reentrant backwards] for more details.
+
+/*
+static ::c10::ThreadLocal<std::shared_ptr<ReadyQueue>> tls_local_ready_queue([]() { 
+  static thread_local std::shared_ptr<ReadyQueue> var; 
+  return &var; 
+});
+实例化一个ThreadLocal变量tls_local_ready_queue
+此处使用lambda函数作为函数变量（对应Accessor）传入，调用隐式构造函数进行实例化
+local_ready_queue实际上为thread_local修饰的ReadyQueue智能指针
+*/
 C10_DEFINE_TLS_static(std::shared_ptr<ReadyQueue>, tls_local_ready_queue);
 #define local_ready_queue (tls_local_ready_queue.get())
 
@@ -144,6 +158,11 @@ C10_DEFINE_TLS_static(std::shared_ptr<ReadyQueue>, tls_local_ready_queue);
 // because then all of our backward executions (including the one we
 // just started) will deadlock!
 //
+// 我们维护一个等待工作的线程池
+// 当一个可重入的反向调用发生时，当前线程阻塞并且从池中的一个线程被唤醒以完成阻塞
+// 任务和任何其他本应分配给该worker的任务。如果没有可用的线程，则生成一个新线程。 
+// 新线程将继续处理来自与父worker相同的ReadyQueue的任务。
+// 当GraphTask完成时，通知正在等待任务的父工作线程，并且当前线程返回到池中。
 // We maintain a pool of threads waiting for work to do
 // When a reentrant backwards call occurs, the current thread blocks
 // and a thread from the pool is woken up to complete the blocking tasks and an
@@ -1041,11 +1060,11 @@ auto Engine::compute_dependencies(
 }
 
 auto Engine::execute(
-    const edge_list& roots, //需要进行反向传播的根节点
+    const edge_list& roots, //需要进行反向传播的根节点的梯度边
     const variable_list& inputs, //根节点的梯度
     bool keep_graph, //计算图是否需要保留的标志
     bool create_graph, //是否构建微分图以用来进行高阶求导
-    bool accumulate_grad, //
+    bool accumulate_grad, //是否将grad累加到叶张量中或捕获
     const edge_list& outputs) -> variable_list { //需要输出梯度的节点
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
   validate_outputs(
@@ -1069,30 +1088,32 @@ auto Engine::execute(
   TORCH_CHECK_VALUE(
       accumulate_grad || !outputs.empty(), "grad requires non-empty inputs.");
 
-  // 初始化一个ready_queue（已有存在的ready_queue则直接使用）
   // A fresh first time Engine::execute call should start on the CPU device,
   // initialize a new thread local ready queue on CPU or reuse the existing one
   // (if there is one allocated already, i.e. consecutive backward calls,
   // re-entrant backward calls), then memoize the local_ready_queue in GraphTask
-  init_local_ready_queue();
+  init_local_ready_queue(); //初始化一个ready_queue，已有存在的ready_queue则直接使用
   bool not_reentrant_backward_call = worker_device == NO_DEVICE;
 
+  // 初始化一个graph_task，用于存储计算图信息
   auto graph_task = std::make_shared<GraphTask>(
       /* keep_graph */ keep_graph,
       /* create_graph */ create_graph,
       /* depth */ not_reentrant_backward_call ? 0 : total_depth + 1,
       /* cpu_ready_queue */ local_ready_queue);
 
+  // 根据roots是否为单节点确定根节点
   // If we receive a single root, skip creating extra root node
   bool skip_dummy_node = roots.size() == 1;
   auto graph_root = skip_dummy_node
-      ? roots.at(0).function
-      : std::make_shared<GraphRoot>(roots, inputs);
+      ? roots.at(0).function //roots为单节点时直接指定对应function为根节点
+      : std::make_shared<GraphRoot>(roots, inputs); //roots不为单节点时创建虚拟根节点
 
   auto min_topo_nr = compute_min_topological_nr(outputs);
   // Now compute the dependencies for all executable functions
   compute_dependencies(graph_root.get(), *graph_task, min_topo_nr);
 
+  // 当指定的输出梯度列表不为空时，需要生成ExecInfo，用于简化计算图的执行路径
   if (!outputs.empty()) {
     graph_task->init_to_execute(
         *graph_root, outputs, accumulate_grad, min_topo_nr);
@@ -1384,6 +1405,8 @@ void GraphTask::stash_current_streams() {
   }
 }
 
+// 填充exec_info，以便应执行的节点具有exec_info[node].needed_=true 。
+// 只有特定节点才应该执行，这些节点的性质是：节点拥有一条路径，这路径可以通往outputs的任何一条边。
 void GraphTask::init_to_execute(
     Node& graph_root,
     const edge_list& outputs,
@@ -1398,6 +1421,7 @@ void GraphTask::init_to_execute(
   // you are reponsible to update your parent's is_needed after all your
   // children have been updated.
   //
+  // 递归遍历next_edge上的node，若子节点的needed为true则该节点的neeeded为true
   // is_needed = {fn: True for fn in outputs}             # (0)
   // seen = {}
   // def compute_is_needed(fn):
