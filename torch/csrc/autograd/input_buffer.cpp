@@ -99,7 +99,7 @@ static void accumulate(
   }
 }
 
-// InputBuffer累积指定索引处的variable
+// InputBuffer累积指定索引处的variable，若为空则直接添加
 void InputBuffer::add(
     size_t pos,
     Variable&& var,
