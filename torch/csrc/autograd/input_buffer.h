@@ -48,7 +48,7 @@ struct InputBuffer {
   static std::vector<Variable> variables(InputBuffer&& g);
 
  private:
-  std::vector<Variable> buffer; //存储梯度Variable
+  std::vector<Variable> buffer; //存储输入variable
 };
 
 } // namespace autograd
