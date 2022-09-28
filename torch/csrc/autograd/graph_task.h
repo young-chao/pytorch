@@ -69,6 +69,8 @@ struct GraphTask : std::enable_shared_from_this<GraphTask> {
         virtual ~GradCaptureHook() = default;
         virtual at::Tensor operator()(const at::Tensor& grad) = 0;
       };
+      // hooks将按照添加的顺序被一一调用, hook的输入grad将是其前一个hook的输出。 
+      // 第一个hook会将捕获的grad作为输入, 最后一个hook的输出将替换捕获的grad。
       // The hooks will be called one by one in the order as they were added.
       // The input grad of a hook will be the output of its preceding hook. The
       // first hook will take the captured grad as the input. The output of the
@@ -77,18 +79,18 @@ struct GraphTask : std::enable_shared_from_this<GraphTask> {
     };
 
     bool should_execute() const {
-      return needed_ || captures_;
+      return needed_ || captures_; //needed和captures均可表示该节点应该执行
     }
 
-    bool needed_ = false;
-    std::unique_ptr<std::vector<Capture>> captures_;
+    bool needed_ = false; //判断节点是否需要执行的标志符
+    std::unique_ptr<std::vector<Capture>> captures_; //判断是否应该返回该节点的梯度
   };
   // exec_info_ is safe to read without synchronization
-  std::unordered_map<Node*, ExecInfo> exec_info_; //执行信息，用于剪除不需要执行的分支
+  std::unordered_map<Node*, ExecInfo> exec_info_; //存储节点执行信息的键值对，用于剪除不需要执行的分支
   // Captures variables are grads captured that we return to the user. After
   // execution of the GraphTask is completed, the captured_vars_ are moved
   // out of the GraphTask and are no longer valid.
-  std::vector<Variable> captured_vars_;
+  std::vector<Variable> captured_vars_; //用于返回给用户的梯度Variable
 
   // Note: this field is not ready to be used until the proper
   // `thread_locals_.set_grad_mode()` call in the constructor.
