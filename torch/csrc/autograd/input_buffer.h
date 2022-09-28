@@ -27,7 +27,7 @@ struct InputBuffer {
   explicit InputBuffer(variable_list&& inputs) : buffer(std::move(inputs)){};
   InputBuffer& operator=(InputBuffer&& other) = default;
 
-  // 累积指定索引处的variable
+  // 累积指定索引处的variable，若为空则直接添加
   // Accumulates the variable at a specified index.
   // The optional CUDA streams determine which stream the accumulation
   // is run on and how the addition is synchronized.
