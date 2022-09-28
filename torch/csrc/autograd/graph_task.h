@@ -157,7 +157,8 @@ struct GraphTask : std::enable_shared_from_this<GraphTask> {
 
   // Future representing the completion of the graph task. Notified when all
   // tasks are done.
-  c10::intrusive_ptr<at::ivalue::Future> future_result_;
+  // 用于记录当前GraphTask是否完成，成员变量value_记录梯度计算结果
+  c10::intrusive_ptr<at::ivalue::Future> future_result_; //Future对象
 
   // Final callbacks installed during execution of this GraphTask
   std::vector<std::function<void()>> final_callbacks_;
