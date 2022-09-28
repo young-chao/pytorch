@@ -1441,16 +1441,16 @@ void GraphTask::init_to_execute(
   // cannot because in the case where two outputs lie on the same path, we still
   // need to explore past the first output or we would miss the nodes that are
   // required to compute the second output.
-  int output_idx = 0;
+  int output_idx = 0; //统计grad()返回Variable的size
   for (auto& output_edge : outputs) {
     // (0) `is_needed` above corresponds to `exec_info_[fn].needed_`
     Node* output = output_edge.function.get();
     auto& info = exec_info_[output];
-    if (accumulate_grad) {
+    if (accumulate_grad) { //backward()调用时直接使needed_为true
       // if called through `.backward()` we directly set `needed_` for all the
       // outputs to true
       info.needed_ = true;
-    } else {
+    } else { //grad()调用时使用captrues记录,与令needed_为true效果一致,为后续grad()的返回结果服务
       // otherwise it is `.grad()` and we set exec_info[fn].captures_ instead
       // In terms of populating the rest of exec_info though, you can basically
       // think of this as the same as setting `needed_` is true directly.
@@ -1460,18 +1460,18 @@ void GraphTask::init_to_execute(
       info.captures_->emplace_back(output_edge.input_nr, output_idx++);
     }
   }
-  captured_vars_.resize(output_idx);
+  captured_vars_.resize(output_idx); //调整captured_vars_的size以后续用于返回Variable
 
   struct Frame {
     Frame(Node* fn) : fn_(fn), next_next_fn_(0) {}
     Node* fn_;
-    size_t next_next_fn_;
+    size_t next_next_fn_; //记录下一个(next_)要遍历的next_fn_序号
 
     Node* get_next_fn() {
       const auto& next = fn_->next_edges();
       auto num_next = next.size();
       while (next_next_fn_ < num_next) {
-        auto fn = next[next_next_fn_++].function.get();
+        auto fn = next[next_next_fn_++].function.get(); //遍历完当前next_fn_后将next_next_fn_加1
         if (fn)
           return fn;
       }
@@ -1479,42 +1479,50 @@ void GraphTask::init_to_execute(
     }
   };
 
+  // 判断Node是否应该执行
   auto nodeShouldExecute = [this](Node* fn) {
     auto it = exec_info_.find(fn);
     return it != exec_info_.end() && it->second.should_execute();
   };
 
-  std::vector<Frame> stack;
-  std::unordered_set<Node*> seen;
-  stack.emplace_back(&graph_root);
-  exec_info_.emplace(stack.back().fn_, ExecInfo());
+  std::vector<Frame> stack; //待遍历的节点栈
+  std::unordered_set<Node*> seen; //已遍历的节点集合
+  stack.emplace_back(&graph_root); //往遍历栈中加入根节点
+  exec_info_.emplace(stack.back().fn_, ExecInfo()); //往exec_info_表中插入根节点和对应ExecInfo
 
+  // 由上至下深度优先遍历节点，完善exec_info_
   while (!stack.empty()) {
     auto& frame = stack.back();
     const auto fn = frame.fn_;
 
     Node* child_fn = nullptr;
+    // seen.emplace(child_fn)返回二元组<iterator,bool>，第二项表示是否插入成功
+    // !seen.emplace(child_fn).second为true表示插入失败，即之前已经遍历过该节点
     while ((child_fn = frame.get_next_fn()) && !seen.emplace(child_fn).second) {
       // (1) next child exists AND has already been seen
       if (nodeShouldExecute(child_fn)) {
-        exec_info_[fn].needed_ = true;
+        // 自动构造needed_为true的Exec_info对象和fn构成键值对插入exec_info_表
+        // Exec_info类必须有不带参数的构造函数或无构造函数(调用默认无参构造函数)
+        exec_info_[fn].needed_ = true; //子节点应该执行，则父节点应该执行
       }
     }
 
-    if (child_fn) {
+    if (child_fn) { // 每插入成功一项则将该节点入栈或跳过该节点
       // (2) next child exists but has not been seen
       if (child_fn->topological_nr() < min_topo_nr) {
+        // 子节点离根节点的距离比output所有节点离根节点的最小距离小
+        // 因此该子节点在后向传播过程中一定没有路径到output中任意节点
         // child created before the first output means this child cannot have
         // an edge to output
-        continue;
+        continue; //剪枝，避免无效遍历
       }
-      stack.emplace_back(child_fn);
-    } else {
+      stack.emplace_back(child_fn); //子节点入栈
+    } else { //
       // (3) no next child exists for `fn` means its `needed` has already been
       // finalized. pop stack and update parent
-      stack.pop_back();
+      stack.pop_back(); //当前节点的子节点均遍历完，当前节点出栈
       if (nodeShouldExecute(fn) && !stack.empty()) {
-        exec_info_[stack.back().fn_].needed_ = true;
+        exec_info_[stack.back().fn_].needed_ = true; //当前节点应该执行，则父节点应该执行
       }
     }
   }
