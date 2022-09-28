@@ -31,7 +31,9 @@ struct GraphTask : std::enable_shared_from_this<GraphTask> {
   // has_error_, future_result_, cpu_ready_queue_, and leaf_streams.
   std::mutex mutex_; //互斥量，用于保护对以上英文注释所提及变量的读写
   std::unordered_map<Node*, InputBuffer> not_ready_; //针对未就绪节点和其输入的map。key是未就绪节点，value是这个节点目前就绪的输入列表。
-  std::unordered_map<Node*, int> dependencies_; //记录节点间的依赖，用来判断后续节点是否已经可以被执行。
+  // 如果节点B在任何节点的next_edges中出现，则依赖数量+1
+  // 如果某节点完成计算，则将next_edges中所有节点的依赖数量-1
+  std::unordered_map<Node*, int> dependencies_; //记录节点的依赖数量，用来判断该节点是否已经可以被执行。
 
   /* Exec info允许过滤图上不需要的路径。
      如果它为空，则意味着任务以默认模式运行，所有next_edges都应该被执行。 
