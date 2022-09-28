@@ -1020,13 +1020,15 @@ inline static uint64_t compute_min_topological_nr(const edge_list& outputs) {
   return min_topo_nr;
 }
 
+// 计算所有可以计算梯度的Node的依赖数量
+// 此处注意是可以计算(requires_grad=true)而非应该计算
 auto Engine::compute_dependencies(
     Node* root,
     GraphTask& task,
     uint64_t min_topo_nr) -> void {
   // Computes the number of dependencies for each function which requires grad
   std::unordered_set<Node*> seen;
-  std::vector<Node*> queue{root};
+  std::vector<Node*> queue{root}; //队列形式存储所有需要计算梯度的节点
   bool might_use_cuda = at::globalContext().hasCUDA();
   bool will_use_cuda = false;
 
@@ -1037,17 +1039,17 @@ auto Engine::compute_dependencies(
     auto fn = queue.back();
     queue.pop_back();
     if (fn->topological_nr() < min_topo_nr) {
-      continue;
+      continue; //不在计算图执行路径上，因此跳过
     }
     if (might_use_cuda && !will_use_cuda) {
       will_use_cuda = fn->stream(c10::DeviceType::CUDA).has_value();
     }
     for (const auto& edge : fn->next_edges()) {
       if (auto next_ptr = edge.function.get()) {
-        dependencies[next_ptr] += 1;
-        const bool was_inserted = seen.insert(next_ptr).second;
-        if (was_inserted)
-          queue.push_back(next_ptr);
+        dependencies[next_ptr] += 1; //将当前节点的所有子节点依赖数量加1
+        const bool was_inserted = seen.insert(next_ptr).second; //插入成功标识符
+        if (was_inserted) //判断当前节点是否已经加入队列
+          queue.push_back(next_ptr); //节点加入队列
       }
     }
   }
@@ -1064,7 +1066,7 @@ auto Engine::execute(
     const variable_list& inputs, //根节点的梯度
     bool keep_graph, //计算图是否需要保留的标志
     bool create_graph, //是否构建微分图以用来进行高阶求导
-    bool accumulate_grad, //是否将grad累加到叶张量中或捕获
+    bool accumulate_grad, //是否将grad累加到叶张量中或捕获直接返回
     const edge_list& outputs) -> variable_list { //需要输出梯度的节点
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
   validate_outputs(
@@ -1109,9 +1111,9 @@ auto Engine::execute(
       ? roots.at(0).function //roots为单节点时直接指定对应function为根节点
       : std::make_shared<GraphRoot>(roots, inputs); //roots不为单节点时创建虚拟根节点
 
-  auto min_topo_nr = compute_min_topological_nr(outputs);
+  auto min_topo_nr = compute_min_topological_nr(outputs); //获取outputs中离根节点的最小topological_nr
   // Now compute the dependencies for all executable functions
-  compute_dependencies(graph_root.get(), *graph_task, min_topo_nr);
+  compute_dependencies(graph_root.get(), *graph_task, min_topo_nr); //计算图中节点的依赖数量
 
   // 当指定的输出梯度列表不为空时，需要生成ExecInfo，用于简化计算图的执行路径
   if (!outputs.empty()) {
