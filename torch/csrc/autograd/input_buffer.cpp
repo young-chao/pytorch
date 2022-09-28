@@ -68,6 +68,7 @@ void record_stream_any_impl(Variable& var, c10::Stream& stream) {
 }
 } // anonymous namespace
 
+// 就地累加梯度
 static void accumulate(
     std::vector<Variable>& buffer,
     const size_t pos,
@@ -76,6 +77,8 @@ static void accumulate(
   auto& old_var = buffer[pos];
   // ATen doesn't route sparse additions correctly...
   // do dense + sparse in-place if possible
+  // 当某一方为COO矩阵表示的稀疏张量时，需先进行转化再相加（add_中已实现转化）
+  // 两者都是稀疏张量或非稀疏张量则直接相加
   if (old_var.is_sparse()) {
     // It is safe to change the Tensor inplace if the Tensor is only used in
     // this buffer (this could be the gradient passed by the user) and that no
@@ -96,6 +99,7 @@ static void accumulate(
   }
 }
 
+// InputBuffer累积指定索引处的variable
 void InputBuffer::add(
     size_t pos,
     Variable&& var,
@@ -106,6 +110,23 @@ void InputBuffer::add(
     return;
   }
 
+  /* 切换到累积设备
+     选择用于累积的设备（和流）是：
+     (1) var不是CUDA变量。累积发生在var的设备上。
+     (2) var是一个CUDA变量，它、消费者和生产者共享同一个设备：
+         (2a) 使用消费者的流作为累积流 
+         (2b) 将累积流与生产者的流同步（如果不同）
+         (2c) 累积
+     (3) var是一个CUDA变量，它与消费者共享一个设备，但不与生产者共享： 
+         (3a) 使用消费者的流作为累积流 
+         (3b) 将累积流与消费者设备的默认流同步 
+         (3c) 累积。
+     (4) var是一个CUDA变量，它与生产者共享一个设备，但不与消费者共享一个设备： 
+         (4a) 使用生产者设备的默认流作为累积流 
+         (4b) 将累积流与生产者的流同步 
+         (4c) 累积.
+     (5) var是一个CUDA变量，它不与消费者或生产者共享设备。累积发生在 var 设备的默认流上。
+  */
   // Switches to accumulate device
   // The device (and stream) chosen for accumulation is:
   //  (1) var is not a CUDA variable. Accumulation happens on var's device.
@@ -190,6 +211,8 @@ void InputBuffer::add(
   }
 }
 
+// 遍历input_buffer中的variables，其中第一个设备非cpu的variable的device将成为
+// input_buffer的device，否则设备就是CPU。
 auto InputBuffer::device() const -> at::Device {
   // Since we pick the first non-CPU tensor, this won't work with
   // mixed device-type operations (e.g., an op that is both CUDA
