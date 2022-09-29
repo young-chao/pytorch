@@ -227,6 +227,7 @@ CheckpointValidGuard::~CheckpointValidGuard() {
   checkpoint_valid = prev_checkpoint_valid_state;
 }
 
+// 就绪队列中添加NodeTask
 auto ReadyQueue::push(NodeTask item, bool incrementOutstandingTasks) -> void {
   {
     // Lock mutex for writing to heap_
@@ -234,7 +235,7 @@ auto ReadyQueue::push(NodeTask item, bool incrementOutstandingTasks) -> void {
     if (incrementOutstandingTasks) {
       std::shared_ptr<GraphTask> graph_task = item.base_.lock();
       TORCH_INTERNAL_ASSERT(graph_task, "GraphTask is no longer valid!");
-      ++graph_task->outstanding_tasks_;
+      ++graph_task->outstanding_tasks_; //graph_task中正在运行的任务加1
     }
     heap_.push(std::move(item));
   }
@@ -265,6 +266,7 @@ auto ReadyQueue::pop() -> NodeTask {
   return task;
 }
 
+// 判断就绪队列是否为空
 bool ReadyQueue::empty() const {
   // Lock mutex for accesses to heap_
   std::unique_lock<std::mutex> lock(mutex_);
@@ -404,6 +406,7 @@ bool get_current_graph_task_keep_graph() {
   return current_graph_task ? current_graph_task->keep_graph_ : true;
 }
 
+// 向当前graph_task对象的exec_info_添加新的需要计算的节点信息
 void add_node_to_current_graph_task_exec_info(Node* fn) {
   current_graph_task->exec_info_[fn].needed_ = true;
 }
@@ -1007,6 +1010,7 @@ void Engine::evaluate_function(
   }
 }
 
+// 计算outputs节点中最小的topological_nr
 inline static uint64_t compute_min_topological_nr(const edge_list& outputs) {
   // Computes the mininum topological number among all the outputs
   if (outputs.empty()) {
@@ -1122,28 +1126,28 @@ auto Engine::execute(
   }
 
   // Queue the root
-  if (skip_dummy_node) {
-    InputBuffer input_buffer(roots.at(0).function->num_inputs());
+  if (skip_dummy_node) { //此时roots和inputs均只含一个元素
+    InputBuffer input_buffer(roots.at(0).function->num_inputs()); //实例化InputBuffer，其buffer的size为根节点输入数量
     auto input = inputs.at(0);
 
-    const auto input_stream = InputMetadata(input).stream();
+    const auto input_stream = InputMetadata(input).stream(); //使用input初始化输入流
     const auto opt_next_stream =
-        roots.at(0).function->stream(c10::DeviceType::CUDA);
+        roots.at(0).function->stream(c10::DeviceType::CUDA); //初始化输出流
     input_buffer.add(
-        roots.at(0).input_nr, std::move(input), input_stream, opt_next_stream);
+        roots.at(0).input_nr, std::move(input), input_stream, opt_next_stream); //使用input和输入输出流实例化InputBuffer
 
     execute_with_graph_task(graph_task, graph_root, std::move(input_buffer));
   } else {
     execute_with_graph_task(
-        graph_task, graph_root, InputBuffer(variable_list()));
+        graph_task, graph_root, InputBuffer(variable_list())); //虚拟根节点没有输入，InputBuffer为空的variable列表
   }
   // Avoid a refcount bump for the Future, since we check for refcount in
   // DistEngine (see TORCH_INTERNAL_ASSERT(futureGrads.use_count() == 1)
   // in dist_engine.cpp).
   auto& fut = graph_task->future_result_;
-  fut->wait();
+  fut->wait(); //等待graph_task完成
   graph_task->warning_handler_.replay_warnings();
-  return fut->value().toTensorVector();
+  return fut->value().toTensorVector(); //返回future.value_表示的梯度变量
 }
 
 void Engine::initialize_device_threads_pool() {
