@@ -5,9 +5,9 @@
 
 ————————————————————————————————————————————————————————————————————————————————————————————————
 计算过程
-a1 = torch.tensor([1.0, 1.0], dtype=torch.float32, requires_grad=True)
-a2 = torch.tensor([1.0, 1.0], dtype=torch.float32, requires_grad=True)
-a3 = torch.tensor([1.0, 1.0], dtype=torch.float32, requires_grad=True)
+a1 = torch.tensor([1., 1.], dtype=torch.float32, requires_grad=True)
+a2 = torch.tensor([1., 1.], dtype=torch.float32, requires_grad=True)
+a3 = torch.tensor([1., 1.], dtype=torch.float32, requires_grad=True)
 b1 = a1+a2
 b2 = a2/a3
 c = b1*b2
@@ -45,36 +45,46 @@ AccumulateGrad(a3) <-------|
 ————————————————————————————————————————————————————————————————————————————————————————————————
 
 ————————————————————————————————————————————————————————————————————————————————————————————————
-后向传播autograd过程各Tensor的内容. grad_fn为Node
+后向传播autograd过程各Tensor的内容。data为张量值，grad为张量相对于根节点的梯度，grad_fn为张量进行反向传
+播用于计算梯度的Node(function)。
 --Node实际上是前向传播过程中的操作在backward过程中用于计算梯度的节点
 --backward过程中每个Node执行apply方法计算梯度，即 output_grad=apply(input_grad)
+--input_grad为当前节点所在张量的梯度
+--output_grad为前一个节点所在张量的梯度（的一部分）
 
 a1:
-  grad: [3., 3.]
+  data: tensor([1., 1.])
+  grad: [0.5, 0.5]  //a1.grad = b1.grad_fn(b1.grad)
   grad_fn: None
 
 a2:
-  grad: [7.5, 7.5]
+  data: tensor([1., 1.])
+  grad: [1.5, 1.5]  //a2.grad = b1.grad_fn(b1.grad) + b2.grad_fn(b2.grad)
   grad_fn: None
 
 a3:
-  grad: [3., 3.]
+  data: tensor([1., 1.])
+  grad: [-1., -1.]  //a3.grad = b2.grad_fn(b2.grad)
   grad_fn: None
 
 b1:
-  grad: None
+  data: tensor([2., 2.])
+  grad: [0.5, 0.5]  //b1.grad = c.grad_fn(c.grad)
   grad_fn: AddBackward0
 
 b2:
-  grad: None
+  data: tensor([1., 1.])
+  grad: [1., 1.]  //b2.grad = c.grad_fn(c.grad)
   grad_fn: DivBackward0
   
 c:
-  grad: None
+  data: tensor([2., 2.])
+  grad: [0.5, 0.5]  //c.grad = d.grad_fn(d.grad)
   grad_fn: MulBackward0
 
 d:
-  grad: None
+  data: tensor(2.)
+  grad: 1.
   grad_fn: MeanBackward0
 
 
