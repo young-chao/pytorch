@@ -50,16 +50,19 @@ void validate_outputs(
     variable_list& grads,
     const std::function<std::string(const std::string&)>& format_error);
 
+// NodeTask类的对象是在queue中传输的东西，一个可以被执行的求导函数
+// 可以认为，生产者不停的向ReadyQueue插入 NodeTask
+// 消费者则从ReadyQueue之中提取NodeTask进行处理。
 struct NodeTask {
-  std::weak_ptr<GraphTask> base_;
-  std::shared_ptr<Node> fn_;
+  std::weak_ptr<GraphTask> base_; //所属的GraphTask
+  std::shared_ptr<Node> fn_; //需要执行的Node，比如PowBackward0
   // This buffer serves as an implicit "addition" node for all of the
   // gradients flowing here.  Once all the dependencies are finished, we
   // use the contents of this buffer to run the function.
-  InputBuffer inputs_;
+  InputBuffer inputs_; //fn_的输入
   // When worker receives a task with isShutdownTask = true, it will immediately
   // exit. The engine sends a shutdown task to every queue upon its destruction.
-  bool isShutdownTask_;
+  bool isShutdownTask_; //关闭任务标志符
 
   int getReentrantDepth() const;
 
@@ -127,6 +130,7 @@ struct ReadyQueue {
   size_t size() const;
 };
 
+// 负责执行反向传播的引擎
 // A single instance of this struct should be created through the whole process
 // lifetime. The worker thread creation logic and Engine's destructor rely on
 // this.
