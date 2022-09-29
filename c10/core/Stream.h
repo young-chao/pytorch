@@ -50,14 +50,16 @@ using StreamId = int64_t;
  *  - cl_command_queue (OpenCL)  (NB: Caffe2's existing OpenCL integration
  *    does NOT support command queues.)
  *
+   此类与设备无关，它不能提供特定于后端的功能（例如，获取CUDA流的cudaStream_t）
+   有提供此功能的包装类，例如CUDAStream。
  * Because this class is device agnostic, it cannot provide backend-specific
  * functionality (e.g., get the cudaStream_t of a CUDA stream.)  There are
  * wrapper classes which provide this functionality, e.g., CUDAStream.
  */
 class C10_API Stream final {
  private:
-  Device device_;
-  StreamId id_;
+  Device device_; //流绑定的设备
+  StreamId id_; //流ID
 
  public:
   enum Unsafe { UNSAFE };
