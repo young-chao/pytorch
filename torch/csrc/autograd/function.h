@@ -59,10 +59,11 @@ class NodeGuard {
 //                               Node
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  /*
- `Node` 是一个抽象类，它表示一个操作，该操作采用零个或多个输入`Variable` 
- 并产生零个或多个输出`Variable`。 
- PyTorch 的 autograd 过程中的所有函数都派生自这个类并覆盖它的 `apply` 方法。 
- 然后可以通过调用运算符调用此类子类的实例。
+ `Node`是一个抽象类，它表示一个操作在反向传播中的形态。
+ Node的核心作用在于其apply方法，接收零个或多个输入`Variable`并产生零个或多个输出`Variable`。 
+ apply方法的本质是某一个操作的backward函数，接收根节点张量相对于当前操作结果张量的梯度，计算
+ 返回前一个操作结果张量的梯度。
+ PyTorch的autograd过程中的所有函数都派生自这个类并覆盖它的`apply`方法。 
  */
 // A `Node` is an abstract class that represents an operation taking zero
 // or more input `Variable`s and producing zero or more output `Variable`s. All
@@ -567,7 +568,7 @@ struct TORCH_API Node : std::enable_shared_from_this<Node> {
 
  protected:
   /// Performs the `Node`'s actual operation.
-  virtual variable_list apply(variable_list&& inputs) = 0;
+  virtual variable_list apply(variable_list&& inputs) = 0; //执行该节点上的梯度计算
 
   /// Calls `apply()`, but instruments it with tracing machinery.
   variable_list traced_apply(variable_list inputs);
