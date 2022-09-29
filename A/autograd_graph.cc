@@ -3,6 +3,8 @@
      ********* 结合反向传播的计算图分析 autograd 过程中 Tensor、 Node 和 Edge 的关系 *********
 ------------------------------------------------------------------------------------------------
 
+Tensor——张量、Node(Function)——节点、Edge——边
+
 ————————————————————————————————————————————————————————————————————————————————————————————————
 计算过程
 a1 = torch.tensor([1., 1.], dtype=torch.float32, requires_grad=True)
@@ -54,32 +56,32 @@ AccumulateGrad(a3) <-------|
 
 a1:
   data: tensor([1., 1.])
-  grad: [0.5, 0.5]  //a1.grad = b1.grad_fn(b1.grad)
+  grad: [0.5, 0.5]  //a1.grad = b1.grad_fn.apply(b1.grad)
   grad_fn: None
 
 a2:
   data: tensor([1., 1.])
-  grad: [1.5, 1.5]  //a2.grad = b1.grad_fn(b1.grad) + b2.grad_fn(b2.grad)
+  grad: [1.5, 1.5]  //a2.grad = b1.grad_fn.apply(b1.grad) + b2.grad_fn.apply(b2.grad)
   grad_fn: None
 
 a3:
   data: tensor([1., 1.])
-  grad: [-1., -1.]  //a3.grad = b2.grad_fn(b2.grad)
+  grad: [-1., -1.]  //a3.grad = b2.grad_fn.apply(b2.grad)
   grad_fn: None
 
 b1:
   data: tensor([2., 2.])
-  grad: [0.5, 0.5]  //b1.grad = c.grad_fn(c.grad)
+  grad: [0.5, 0.5]  //b1.grad = c.grad_fn.apply(c.grad)
   grad_fn: AddBackward0
 
 b2:
   data: tensor([1., 1.])
-  grad: [1., 1.]  //b2.grad = c.grad_fn(c.grad)
+  grad: [1., 1.]  //b2.grad = c.grad_fn.apply(c.grad)
   grad_fn: DivBackward0
   
 c:
   data: tensor([2., 2.])
-  grad: [0.5, 0.5]  //c.grad = d.grad_fn(d.grad)
+  grad: [0.5, 0.5]  //c.grad = d.grad_fn.apply(d.grad)
   grad_fn: MulBackward0
 
 d:
