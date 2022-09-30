@@ -1136,9 +1136,9 @@ auto Engine::execute(
     input_buffer.add(
         roots.at(0).input_nr, std::move(input), input_stream, opt_next_stream); //使用input和输入输出流实例化InputBuffer
 
-    execute_with_graph_task(graph_task, graph_root, std::move(input_buffer));
+    execute_with_graph_task(graph_task, graph_root, std::move(input_buffer)); //从根节点开始执行计算图
   } else {
-    execute_with_graph_task(
+    execute_with_graph_task( //从虚拟根节点开始执行计算图
         graph_task, graph_root, InputBuffer(variable_list())); //虚拟根节点没有输入，InputBuffer为空的variable列表
   }
   // Avoid a refcount bump for the Future, since we check for refcount in
