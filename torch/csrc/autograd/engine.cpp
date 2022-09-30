@@ -75,7 +75,7 @@ inline bool should_run_in_cpu_ready_queue(c10::DeviceType device) {
 }
 } // namespace
 
-// engine产生的线程被分配一个“worker_device”，指定它们处理的工作设备。
+// Engine产生的线程被分配一个“worker_device”，指定它们处理的工作设备。
 // Threads spawned by the engine are assigned a 'worker_device' specifying
 // what device they process work for. This variable is initialized at:
 // 1. thread creation time for CUDA, XLA device threads, as they are
@@ -159,7 +159,7 @@ C10_DEFINE_TLS_static(std::shared_ptr<ReadyQueue>, tls_local_ready_queue);
 // just started) will deadlock!
 //
 // 我们维护一个等待工作的线程池
-// 当一个可重入的反向调用发生时，当前线程阻塞并且从池中的一个线程被唤醒以完成阻塞
+// 当一个可重入的反向调用发生时，当前线程阻塞并且池中的一个线程被唤醒以完成阻塞
 // 任务和任何其他本应分配给该worker的任务。如果没有可用的线程，则生成一个新线程。 
 // 新线程将继续处理来自与父worker相同的ReadyQueue的任务。
 // 当GraphTask完成时，通知正在等待任务的父工作线程，并且当前线程返回到池中。
