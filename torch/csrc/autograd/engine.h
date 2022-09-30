@@ -89,6 +89,7 @@ class CheckpointValidGuard {
   bool prev_checkpoint_valid_state;
 };
 
+// 存储NodeTask节点的就绪队列
 struct ReadyQueue {
  private:
   // Returns true when t2 should be (weakly) BEFORE t1 in the queue.
