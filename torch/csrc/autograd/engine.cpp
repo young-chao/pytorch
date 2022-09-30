@@ -1150,12 +1150,13 @@ auto Engine::execute(
   return fut->value().toTensorVector(); //返回future.value_表示的梯度变量
 }
 
+// 初始化设备线程池
 void Engine::initialize_device_threads_pool() {
   TORCH_CHECK(
       !in_bad_autograd_fork,
       "Unable to handle autograd's threading in combination with fork-based multiprocessing. "
       "See https://github.com/pytorch/pytorch/wiki/Autograd-and-Fork");
-  c10::call_once(
+  c10::call_once( // 保证只初始化一次设备线程池
       start_device_threads_flag_, &Engine::start_device_threads, this);
 }
 
@@ -1163,9 +1164,9 @@ c10::intrusive_ptr<at::ivalue::Future> Engine::execute_with_graph_task(
     const std::shared_ptr<GraphTask>& graph_task,
     std::shared_ptr<Node> graph_root,
     InputBuffer&& input_buffer) {
-  initialize_device_threads_pool();
+  initialize_device_threads_pool(); //初始化设备线程池
   // Lock mutex for GraphTask.
-  std::unique_lock<std::mutex> lock(graph_task->mutex_);
+  std::unique_lock<std::mutex> lock(graph_task->mutex_); //锁上graph_task
 
   auto queue = ready_queue(graph_task->cpu_ready_queue_, input_buffer.device());
 
@@ -1315,13 +1316,14 @@ auto Engine::ready_queue_by_index(
   }
 }
 
+// 为所有GPU设备设置ReadyQueue并启动对应线程
 auto Engine::start_device_threads() -> void {
   // First always initialize the thread pool for re-entrant threads
-  thread_pool_shared_ = std::make_shared<ThreadPoolShared>();
+  thread_pool_shared_ = std::make_shared<ThreadPoolShared>(); //为可重入反向传播初始化线程池
 
   // Second, create special threads for each non-CPU device
   // See Note [Allocating GPUs to autograd threads]
-  c10::DeviceIndex num_devices = 0;
+  c10::DeviceIndex num_devices = 0; //统计非CPU设备数量
   for (const auto& impl_atomic : c10::impl::device_guard_impl_registry) {
     auto* impl = impl_atomic.load();
     // Only record the number of devices for device that don't run on the
@@ -1342,15 +1344,16 @@ auto Engine::start_device_threads() -> void {
   // allocate one thread for every GPU device (but colocate GPUs of different
   // types), and pre-allocate the device_ready_queues_ to ensure safe reading on
   // it.
-  device_ready_queues_ = std::vector<std::shared_ptr<ReadyQueue>>(num_devices);
+  device_ready_queues_ = std::vector<std::shared_ptr<ReadyQueue>>(num_devices); //非CPU设备的ReadyQueue指针集合
   for (auto& queue : device_ready_queues_) {
-    queue = std::make_shared<ReadyQueue>();
+    queue = std::make_shared<ReadyQueue>(); //初始化非CPU设备的ReadyQueue指针
   }
 
   for (const auto i : c10::irange(num_devices)) {
-    std::thread t(&Engine::thread_init, this, i, device_ready_queues_[i], true);
-    t.detach();
+    std::thread t(&Engine::thread_init, this, i, device_ready_queues_[i], true); //初始化非CPU设备的对应线程
+    t.detach(); //将工作线程与主线程分离
   }
+  //等待所有工作线程启动
   // Wait for the threads to start
   {
     std::unique_lock<std::mutex> lk(non_reentrant_device_thread_mutex_);
