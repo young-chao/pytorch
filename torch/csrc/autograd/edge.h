@@ -37,7 +37,7 @@ struct Edge {
   /// The function this `Edge` points to.
   std::shared_ptr<Node> function;
 
-  /// 函数的特定输入的标识符,指定本Edge是Node的第几个输入。
+  /// 函数的特定输入的标识符,指定本Edge后向传播之中是function的第几个输入
   /// The identifier of a particular input to the function.
   uint32_t input_nr;
 };
