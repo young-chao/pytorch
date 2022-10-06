@@ -443,6 +443,8 @@ void add_node_to_current_graph_task_exec_info(Node* fn) {
 //         long as graph_task is completed and notify the owning thread as
 //         needed.
 auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
+  // 当graph_task为nullptr时，这是一个处理任务的长时间运行的线程（例如：设备线程）。 
+  // 当graph_task不为null时（例如：重入后向，用户线程），一旦该graph_task完成，该函数预计将退出。
   // When graph_task is nullptr, this is a long running thread that processes
   // tasks (ex: device threads). When graph_task is non-null (ex: reentrant
   // backwards, user thread), this function is expected to exit once that
@@ -450,8 +452,10 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
 
   // local_ready_queue should already been initialized when we get into
   // thread_main
-  TORCH_INTERNAL_ASSERT(local_ready_queue != nullptr);
+  TORCH_INTERNAL_ASSERT(local_ready_queue != nullptr); //确认local_ready_queue不为空
   while (graph_task == nullptr || !graph_task->future_result_->completed()) {
+    // local_graph_task表示我们从队列中检索到的graph_task。
+    // 外层的graph_task表示我们需要执行的重入执行的整体graph_task。
     // local_graph_task represents the graph_task we retrieve from the queue.
     // The outer graph_task represents the overall graph_task we need to execute
     // for reentrant execution.
@@ -463,7 +467,7 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       NodeTask task = local_ready_queue->pop();
       // This will only work if the worker is running a non backward task
       // TODO Needs to be fixed this to work in all cases
-      if (task.isShutdownTask_) {
+      if (task.isShutdownTask_) { //检测到Shutdown时终止引擎
         C10_LOG_API_USAGE_ONCE("torch.autograd.thread_shutdown");
         break;
       }
@@ -1098,10 +1102,11 @@ auto Engine::execute(
   // initialize a new thread local ready queue on CPU or reuse the existing one
   // (if there is one allocated already, i.e. consecutive backward calls,
   // re-entrant backward calls), then memoize the local_ready_queue in GraphTask
-  init_local_ready_queue(); //初始化一个ready_queue，已有存在的ready_queue则直接使用
+  init_local_ready_queue(); //初始化主线程的local_ready_queue
   bool not_reentrant_backward_call = worker_device == NO_DEVICE;
 
   // 初始化一个graph_task，用于存储计算图信息
+  // 传入local_ready_queue作为该graph_task的cpu_ready_queue
   auto graph_task = std::make_shared<GraphTask>(
       /* keep_graph */ keep_graph,
       /* create_graph */ create_graph,
@@ -1176,11 +1181,12 @@ c10::intrusive_ptr<at::ivalue::Future> Engine::execute_with_graph_task(
     // We set the worker_device to CPU_DEVICE only if worker_device was
     // previously NO_DEVICE. Setting it to CPU afterwards allow us to detect
     // whether this is a re-entrant call or not.
-    set_device(CPU_DEVICE);
+    set_device(CPU_DEVICE); //设置设备为CPU保证重入后向时可识别
 
     // set the graph_task owner to the current device
     graph_task->owner_ = worker_device;
-
+    
+    // 已经填充好graph_task的所有非线程安全字段，将其graph_task加入队列
     // Now that all the non-thread safe fields of the graph_task have been
     // populated, we can enqueue it.
     queue->push(
@@ -1189,14 +1195,14 @@ c10::intrusive_ptr<at::ivalue::Future> Engine::execute_with_graph_task(
     // The owning thread start to drive the engine execution for any CPU task
     // that was just pushed or will be added later from other worker threads
     lock.unlock();
-    thread_main(graph_task);
+    thread_main(graph_task); //驱动引擎执行graph_task
     TORCH_INTERNAL_ASSERT(graph_task->future_result_->completed());
     // reset the worker_device after the completion of the graph_task, this is
     // so that the initial state of the engine remains the same across every
     // backward() or grad() call, we don't need to reset local_ready_queue as we
     // could possibly reuse it for new backward calls.
-    worker_device = NO_DEVICE;
-  } else {
+    worker_device = NO_DEVICE; //执行完graph_task后重置工作设备
+  } else { //重入后向传播调用时设备必不为NO_DEVICE
     // If worker_device is any devices (i.e. CPU, CUDA): this is a re-entrant
     //    backward call from that device.
     graph_task->owner_ = worker_device;
