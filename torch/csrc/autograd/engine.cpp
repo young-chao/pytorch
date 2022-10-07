@@ -140,6 +140,13 @@ local_ready_queue实际上为thread_local修饰的ReadyQueue智能指针
 C10_DEFINE_TLS_static(std::shared_ptr<ReadyQueue>, tls_local_ready_queue);
 #define local_ready_queue (tls_local_ready_queue.get())
 
+/* 可重入反向传播: 某一Node中调用backward则会出现反向传播时设备线程中再进行反向传播的现象
+   autograd引擎实现的两个方面： 
+    1. 当调用 Engine::execute() 时，会阻塞直到梯度计算完成，以便可以获得backward的最终结果变量。 
+    2. 引擎保持每个工作队列有一个工作线程来运行，每个工作队列都固定到执行操作的特定设备上。 
+   问题是，假设在工作线程内调用backward()。根据属性(1)，我们应该阻塞直到嵌套任务完成。 
+   但是，根据属性(2)，此工作线程处于处理分配给它的任务的hook上；如果阻塞，那所有的backward执行都会死锁。
+*/
 // Note [Reentrant backwards]
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~
 // To understand the reentrant backwards problem, we have to notice two
@@ -548,6 +555,7 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
   }
 }
 
+// 启动负责可重入后向计算的线程
 // Reentrant call will re-use the graph_task's owner thread ready_queue for
 // queueing tasks (NOTE: this is not true in the async_mode of the engine).
 // While we can create separate ready queue for each new reentrant
@@ -555,15 +563,15 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
 // performance improvement and cuda thread still have to do the same thing.
 void Engine::reentrant_thread_init() {
   at::init_num_threads();
-  auto tp_shared = thread_pool_shared_;
+  auto tp_shared = thread_pool_shared_; //获取线程池
   while (true) {
     std::unique_lock<std::mutex> lk(tp_shared->mutex_);
     ++thread_pool_shared_->num_workers_;
     tp_shared->work_.wait(
         lk, [&tp_shared] { return !tp_shared->graphtasks_queue_.empty(); });
     --thread_pool_shared_->num_workers_;
-    auto task = tp_shared->graphtasks_queue_.front();
-    tp_shared->graphtasks_queue_.pop();
+    auto task = tp_shared->graphtasks_queue_.front(); //获取队列最前方的graphtask
+    tp_shared->graphtasks_queue_.pop();  //弹出队列最前方的graphtask
     lk.unlock();
     std::shared_ptr<GraphTask> graph_task;
     if (!(graph_task = task.lock())) {
@@ -576,7 +584,7 @@ void Engine::reentrant_thread_init() {
     local_ready_queue =
         ready_queue_by_index(graph_task->cpu_ready_queue_, graph_task->owner_);
     total_depth = graph_task->reentrant_depth_;
-    thread_main(graph_task);
+    thread_main(graph_task); //线程执行的主方法
   }
 }
 
@@ -1234,10 +1242,11 @@ c10::intrusive_ptr<at::ivalue::Future> Engine::execute_with_graph_task(
     queue->push(
         NodeTask(graph_task, std::move(graph_root), std::move(input_buffer)));
 
+    // 
     if (current_depth >= max_recursion_depth_) {
       // See Note [Reentrant backwards]
       // If reached the max depth, switch to a different thread
-      add_thread_pool_task(graph_task);
+      add_thread_pool_task(graph_task); //超出最大递归深度时使用线程池执行该graph_task
     } else {
       // Total depth needs to be updated only in this codepath, since it is
       // not used in the block above (when we call add_thread_pool_task).
@@ -1249,7 +1258,7 @@ c10::intrusive_ptr<at::ivalue::Future> Engine::execute_with_graph_task(
       // complete!
       ++current_depth;
       lock.unlock();
-      thread_main(graph_task);
+      thread_main(graph_task); //未超过最大递归深度时该线程直接执行该graph_task
       --current_depth;
       --total_depth;
 
@@ -1396,6 +1405,7 @@ auto Engine::start_device_threads() -> void {
   }
 }
 
+// 使用线程池执行可重用后向计算任务
 void Engine::add_thread_pool_task(const std::weak_ptr<GraphTask>& graph_task) {
   std::unique_lock<std::mutex> lck(thread_pool_shared_->mutex_);
   // There may already be some items on the graphtasks_queue_ added by other
@@ -1403,19 +1413,19 @@ void Engine::add_thread_pool_task(const std::weak_ptr<GraphTask>& graph_task) {
   // added
   bool create_thread =
       (thread_pool_shared_->num_workers_ <=
-       thread_pool_shared_->graphtasks_queue_.size());
-  thread_pool_shared_->graphtasks_queue_.push(graph_task);
+       thread_pool_shared_->graphtasks_queue_.size()); //当前线程池worker数量是否小于队列任务数量
+  thread_pool_shared_->graphtasks_queue_.push(graph_task); //往线程池的graphtasks_queue_加入当前graph_task
   // Don't need to be holding the lock while actually creating the thread
   lck.unlock();
   if (create_thread) {
     // If we're creating a new thread, forking is not allowed anymore
     track_bad_autograd_forks();
-    std::thread t(&Engine::reentrant_thread_init, this);
+    std::thread t(&Engine::reentrant_thread_init, this); //启动可重用后向计算的线程
     t.detach();
   }
   // This works even if new thread is created because wait() will test the
   // predicate before waiting
-  thread_pool_shared_->work_.notify_one();
+  thread_pool_shared_->work_.notify_one(); //通知新线程运行
 }
 
 // Remembers current streams on all devices where a context has been created.
