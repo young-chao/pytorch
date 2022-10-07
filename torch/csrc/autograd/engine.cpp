@@ -892,8 +892,8 @@ static variable_list call_function(
 
 void Engine::evaluate_function(
     std::shared_ptr<GraphTask>& graph_task,
-    Node* func,
-    InputBuffer& inputs,
+    Node* func,  //导数计算方法的节点
+    InputBuffer& inputs, //当前Node的输入梯度
     const std::shared_ptr<ReadyQueue>& cpu_ready_queue) {
   // The InputBuffer::adds that supplied incoming grads took pains to
   // ensure they're safe to consume in the context of the present
@@ -905,7 +905,7 @@ void Engine::evaluate_function(
   // If exec_info_ is not empty, we have to instrument the execution
   auto& exec_info_ = graph_task->exec_info_;
   if (!exec_info_.empty()) {
-    auto& fn_info = exec_info_.at(func);
+    auto& fn_info = exec_info_.at(func); //获取当前Node的执行信息
     if (auto* capture_vec = fn_info.captures_.get()) {
       // Lock mutex for writing to graph_task->captured_vars_.
       std::lock_guard<std::mutex> lock(graph_task->mutex_);
@@ -923,18 +923,20 @@ void Engine::evaluate_function(
     }
     if (!fn_info.needed_) {
       // Skip execution if we don't need to execute the function.
-      return;
+      return; //当前节点不需要计算梯度，直接跳过
     }
   }
 
+  // 根据func和inputs执行具体节点的反向计算
   auto outputs = call_function(graph_task, func, inputs);
 
+  // 如果不需要保持计算图，则本节点释放变量
   auto& fn = *func;
   if (!graph_task->keep_graph_) {
     fn.release_variables();
   }
 
-  int num_outputs = outputs.size();
+  int num_outputs = outputs.size(); //等于当前node的next_edge()返回的list元素数量
   if (num_outputs == 0) { // Note: doesn't acquire the mutex
     // Records leaf stream (if applicable)
     // See Note [Streaming backwards]
@@ -959,12 +961,13 @@ void Engine::evaluate_function(
     }
   }
 
+  // 对当前Node的所有next_edges指向的Node进行计算准备
   // Lock mutex for the accesses to GraphTask dependencies_, not_ready_ and
   // cpu_ready_queue_ below
   std::lock_guard<std::mutex> lock(graph_task->mutex_);
   for (const auto i : c10::irange(num_outputs)) {
     auto& output = outputs[i];
-    const auto& next = fn.next_edge(i);
+    const auto& next = fn.next_edge(i); //获取next_edge
 
     if (!next.is_valid())
       continue;
@@ -972,34 +975,37 @@ void Engine::evaluate_function(
     // Check if the next function is ready to be computed
     bool is_ready = false;
     auto& dependencies = graph_task->dependencies_;
-    auto it = dependencies.find(next.function.get());
+    auto it = dependencies.find(next.function.get()); //查询next_edge指向节点的依赖数量
 
     if (it == dependencies.end()) {
       auto name = next.function->name();
       throw std::runtime_error(std::string("dependency not found for ") + name);
-    } else if (--it->second == 0) {
+    } else if (--it->second == 0) { //next node的依赖数量为0表明依赖节点计算均完成
       dependencies.erase(it);
-      is_ready = true;
+      is_ready = true; //标识next node可以进行后向计算
     }
 
     auto& not_ready = graph_task->not_ready_;
-    auto not_ready_it = not_ready.find(next.function.get());
-    if (not_ready_it == not_ready.end()) {
+    auto not_ready_it = not_ready.find(next.function.get()); //获取next node的inputbuffer
+    if (not_ready_it == not_ready.end()) { //inputbuffer为空
       // Skip functions that aren't supposed to be executed
       if (!exec_info_.empty()) {
         auto it = exec_info_.find(next.function.get());
         if (it == exec_info_.end() || !it->second.should_execute()) {
-          continue;
+          continue; //next node不需要执行则直接跳过
         }
       }
       // No buffers have been allocated for the function
-      InputBuffer input_buffer(next.function->num_inputs());
+      InputBuffer input_buffer(next.function->num_inputs()); //初始化next node的输入梯度
 
+      // 下一个节点的输入梯度包括当前节点的输出，因此拷贝当前节点的output加入inputbuffer
       // Accumulates into buffer
       const auto opt_next_stream = next.function->stream(c10::DeviceType::CUDA);
       input_buffer.add(
           next.input_nr, std::move(output), opt_parent_stream, opt_next_stream);
 
+      // 依赖均完成则将next node插入到就绪队列中
+      // 否则先将next node和对应inputbuffer存入not_ready中
       if (is_ready) {
         auto queue = ready_queue(cpu_ready_queue, input_buffer.device());
         queue->push(
@@ -1007,19 +1013,20 @@ void Engine::evaluate_function(
       } else {
         not_ready.emplace(next.function.get(), std::move(input_buffer));
       }
-    } else {
+    } else { //inputbuffer不为空，说明next node的某一前置节点完成计算时已建立inputbuffer
       // The function already has a buffer
       auto& input_buffer = not_ready_it->second;
 
+      // 下一个节点的输入梯度包括当前节点的输出，因此拷贝当前节点的output加入inputbuffer
       // Accumulates into buffer
       const auto opt_next_stream = next.function->stream(c10::DeviceType::CUDA);
       input_buffer.add(
           next.input_nr, std::move(output), opt_parent_stream, opt_next_stream);
-      if (is_ready) {
+      if (is_ready) { // 依赖均完成，将next node插入到就绪队列中
         auto queue = ready_queue(cpu_ready_queue, input_buffer.device());
         queue->push(
             NodeTask(graph_task, next.function, std::move(input_buffer)));
-        not_ready.erase(not_ready_it);
+        not_ready.erase(not_ready_it); //next node已经加入就绪队列，将not_ready移除
       }
     }
   }
