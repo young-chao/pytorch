@@ -92,6 +92,7 @@ class CheckpointValidGuard {
 // 存储NodeTask节点的就绪队列
 struct ReadyQueue {
  private:
+  // 依据ReentrantDepth和sequence_nr做比较，哪一个小就消费哪一个。消费的顺序与生产的顺序无关。
   // Returns true when t2 should be (weakly) BEFORE t1 in the queue.
   // Shutdown tasks are first and then empty NodeTask are next.
   struct CompareNodeTaskTime {
@@ -111,11 +112,13 @@ struct ReadyQueue {
     }
   };
 
+  // 用于唤醒等待该就绪队列任务的线程
   // To notify threads waiting on the ReadyQueue of available tasks on the heap_
   std::condition_variable not_empty_;
   // To protect read and writes to heap_
   mutable std::mutex mutex_;
 
+  // 使用以上比较规则构建的存储NodeTask的优先队列
   std::priority_queue<NodeTask, std::vector<NodeTask>, CompareNodeTaskTime>
       heap_;
 
@@ -126,7 +129,7 @@ struct ReadyQueue {
   // DistEngine.execute_graph_task_until_ready_queue_empty)
   void push(NodeTask item, bool incrementOutstandingTasks = true);
   void pushShutdownTask();
-  NodeTask pop();
+  NodeTask pop(); //每次pop时会取出CompareNodeTaskTime最小的 NodeTask。
   bool empty() const;
   size_t size() const;
 };
