@@ -712,6 +712,7 @@ void GraphTask::set_exception(
   }
 }
 
+// 针对inputs执行fn节点上的所有前置hook
 static variable_list call_pre_hooks(Node& fn, variable_list inputs) {
   for (const auto& hook : fn.pre_hooks()) {
     inputs = (*hook)(inputs);
@@ -719,6 +720,7 @@ static variable_list call_pre_hooks(Node& fn, variable_list inputs) {
   return inputs;
 }
 
+// 针对outputs执行fn节点上的所有后置hook
 static variable_list call_post_hooks(
     Node& fn,
     variable_list outputs,
@@ -839,6 +841,7 @@ void validate_outputs(
   }
 }
 
+// 调用func的apply方法执行梯度计算
 static variable_list call_function(
     std::shared_ptr<GraphTask>& graph_task,
     Node* func,
@@ -846,7 +849,7 @@ static variable_list call_function(
   CheckpointValidGuard cpvguard(graph_task);
   auto& fn = *func;
   auto inputs =
-      call_pre_hooks(fn, InputBuffer::variables(std::move(inputBuffer)));
+      call_pre_hooks(fn, InputBuffer::variables(std::move(inputBuffer))); //调用func上的前置hook
 
   if (!graph_task->keep_graph_) {
     fn.will_release_variables();
@@ -854,7 +857,8 @@ static variable_list call_function(
 
   const auto has_post_hooks = !fn.post_hooks().empty();
   variable_list outputs;
-
+  
+  // 使用fn执行梯度计算
   if (has_post_hooks) {
     // In functions/accumulate_grad.cpp, there is some logic to check the
     // conditions under which the incoming gradient can be stolen directly
@@ -885,7 +889,7 @@ static variable_list call_function(
 
   if (has_post_hooks) {
     // NOLINTNEXTLINE(bugprone-use-after-move)
-    return call_post_hooks(fn, std::move(outputs), inputs);
+    return call_post_hooks(fn, std::move(outputs), inputs); //调用func上的后置hook
   }
   return outputs;
 }
