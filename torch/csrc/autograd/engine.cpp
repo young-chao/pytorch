@@ -227,7 +227,7 @@ CheckpointValidGuard::~CheckpointValidGuard() {
   checkpoint_valid = prev_checkpoint_valid_state;
 }
 
-// 就绪队列中添加NodeTask
+// 向就绪队列中添加NodeTask
 auto ReadyQueue::push(NodeTask item, bool incrementOutstandingTasks) -> void {
   {
     // Lock mutex for writing to heap_
@@ -235,13 +235,14 @@ auto ReadyQueue::push(NodeTask item, bool incrementOutstandingTasks) -> void {
     if (incrementOutstandingTasks) {
       std::shared_ptr<GraphTask> graph_task = item.base_.lock();
       TORCH_INTERNAL_ASSERT(graph_task, "GraphTask is no longer valid!");
-      ++graph_task->outstanding_tasks_; //graph_task中正在运行的任务加1
+      ++graph_task->outstanding_tasks_; //graph_task中需要运行的任务加1
     }
     heap_.push(std::move(item));
   }
-  not_empty_.notify_one();
+  not_empty_.notify_one(); //通知消费者
 }
 
+// 向就绪队列中添加NodeTask
 auto ReadyQueue::pushShutdownTask() -> void {
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -256,10 +257,11 @@ size_t ReadyQueue::size() const {
   return heap_.size();
 }
 
+// 从ReadyQueue中弹出一个NodeTask节点用于进行梯度计算
 auto ReadyQueue::pop() -> NodeTask {
   // Lock mutex for accesses to heap_
   std::unique_lock<std::mutex> lock(mutex_);
-  not_empty_.wait(lock, [this] { return !heap_.empty(); });
+  not_empty_.wait(lock, [this] { return !heap_.empty(); }); //阻塞等待生产者添加NodeTask
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
   auto task = std::move(const_cast<NodeTask&>(heap_.top()));
   heap_.pop();
@@ -352,6 +354,12 @@ void Engine::thread_init(
 
   at::init_num_threads();
 
+  // 注意 [将 GPU 分配给 autograd 线程]
+  // 最初，编写autograd引擎时只考虑了CUDA。分配一个线程来处理所有CPU操作，并为每个CUDA设备分配一个线程。 
+  // 但是如果有其他设备呢？ 有两种可行的策略：
+  // 1)分配等于max(num_cuda_devices, num_xla_devices, ...) 的线程并将cuda设备0与xla设备0并置
+  // 2)分配等于sum(num_cuda_devices, num_xla_devices, ...) 的线程，让每个设备都分开。
+  // 目前pytorch中选择了方案1——并置管理设备。
   // Note [Allocating GPUs to autograd threads]
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // What's our strategy here?  Originally, the autograd engine was written
@@ -455,7 +463,7 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
   TORCH_INTERNAL_ASSERT(local_ready_queue != nullptr); //确认local_ready_queue不为空
   while (graph_task == nullptr || !graph_task->future_result_->completed()) {
     // local_graph_task表示我们从队列中检索到的graph_task。
-    // 外层的graph_task表示我们需要执行的重入执行的整体graph_task。
+    // 外层的graph_task表示我们需要执行的可重入执行的整体graph_task。
     // local_graph_task represents the graph_task we retrieve from the queue.
     // The outer graph_task represents the overall graph_task we need to execute
     // for reentrant execution.
@@ -503,7 +511,7 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
                 local_graph_task,
                 task.fn_.get(),
                 task.inputs_,
-                local_graph_task->cpu_ready_queue_);
+                local_graph_task->cpu_ready_queue_); //计算node的梯度
           }
         } catch (std::exception& e) {
           thread_on_exception(local_graph_task, task.fn_, e);
@@ -1284,6 +1292,7 @@ void Engine::init_local_ready_queue(std::shared_ptr<ReadyQueue> ready_queue) {
   }
 }
 
+// CPU就绪队列是每个GraphTask专用的，但CUDA设备就绪队列在所有graphtask之间共享
 // CPU ready queue is per GraphTask, but CUDA device ready queues are shared
 // across all graph tasks
 auto Engine::ready_queue(
