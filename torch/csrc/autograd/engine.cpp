@@ -526,10 +526,10 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
     --local_graph_task->outstanding_tasks_;
 
     // Check if we've completed execution.
-    if (local_graph_task->completed()) {
+    if (local_graph_task->completed()) { //local_graph_task执行完时通知相应线程
       local_graph_task->mark_as_completed_and_run_post_processing();
 
-      auto base_owner = local_graph_task->owner_;
+      auto base_owner = local_graph_task->owner_; //获取local_graph_task的拥有者设备
       // The current worker thread finish the graph_task, but the owning thread
       // of the graph_task might be sleeping on pop() if it does not have work.
       // So we need to send a dummy function task to the owning thread just to
@@ -538,7 +538,7 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       // before it gets to the task, but it's a no-op anyway.
       //
       // NB: This is not necessary if the current thread is the owning thread.
-      if (worker_device != base_owner) {
+      if (worker_device != base_owner) { //插入空NodeTask唤醒拥有该graph_task的设备线程
         // Synchronize outstanding_tasks_ with queue mutex
         std::atomic_thread_fence(std::memory_order_release);
         ready_queue_by_index(local_graph_task->cpu_ready_queue_, base_owner)
