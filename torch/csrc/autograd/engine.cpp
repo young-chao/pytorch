@@ -66,6 +66,8 @@ static void track_bad_autograd_forks() {
 #endif
 }
 
+// 根据设备类型判断是否应该加入cpu_ready_queue中
+// kCPU为指定CPU运行，kMeta为tensors with no data，kLazy为Lazy Tensors
 inline bool should_run_in_cpu_ready_queue(c10::DeviceType device) {
   if (device == c10::kCPU || device == c10::kMeta || device == c10::kLazy) {
     return true;
@@ -1312,10 +1314,11 @@ auto Engine::ready_queue(
   }
 }
 
+// 用设备号（device index）去vector里得到每个device专属的ReadyQueue
 auto Engine::ready_queue_by_index(
     std::shared_ptr<ReadyQueue> cpu_ready_queue,
     int device_index) -> std::shared_ptr<ReadyQueue> {
-  if (device_index == CPU_DEVICE) {
+  if (device_index == CPU_DEVICE) { //CPU_DEVICE=-1
     // return the cpu ready queue passed in
     TORCH_INTERNAL_ASSERT(cpu_ready_queue);
     return cpu_ready_queue;
@@ -1338,13 +1341,13 @@ auto Engine::start_device_threads() -> void {
 
   // Second, create special threads for each non-CPU device
   // See Note [Allocating GPUs to autograd threads]
-  c10::DeviceIndex num_devices = 0; //统计非CPU设备数量
+  c10::DeviceIndex num_devices = 0; //各类型非CPU设备共用就绪队列，因此共用设备序号
   for (const auto& impl_atomic : c10::impl::device_guard_impl_registry) {
     auto* impl = impl_atomic.load();
     // Only record the number of devices for device that don't run on the
     // cpu ready queue.
     if (impl && !should_run_in_cpu_ready_queue(impl->type())) {
-      num_devices = std::max(num_devices, impl->deviceCount());
+      num_devices = std::max(num_devices, impl->deviceCount()); //记录各类型非CPU设备最大数量
     }
   }
 
