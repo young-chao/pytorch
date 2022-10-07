@@ -244,11 +244,11 @@ auto ReadyQueue::push(NodeTask item, bool incrementOutstandingTasks) -> void {
   not_empty_.notify_one(); //通知消费者
 }
 
-// 向就绪队列中添加NodeTask
+// 向就绪队列中添加用于停止对应设备线程的NodeTask
 auto ReadyQueue::pushShutdownTask() -> void {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    heap_.push(NodeTask({}, nullptr, InputBuffer(0), true));
+    heap_.push(NodeTask({}, nullptr, InputBuffer(0), true)); //空的NodeTask,isShutdownTask_标志设为true
   }
   not_empty_.notify_one();
 }
@@ -346,6 +346,7 @@ void Engine::decrement_non_reentrant_thread_count() {
   non_reentrant_device_thread_condvar_.notify_one();
 }
 
+// 设备线程运行启动方法
 void Engine::thread_init(
     int device,
     const std::shared_ptr<ReadyQueue>& ready_queue,
@@ -385,8 +386,8 @@ void Engine::thread_init(
   // queue that is created before the thread initialization
   init_local_ready_queue(ready_queue);
 
-  std::shared_ptr<GraphTask> graph_task = nullptr;
-  thread_main(graph_task);
+  std::shared_ptr<GraphTask> graph_task = nullptr; //传入空graph_task表明为设备线程运行
+  thread_main(graph_task); //设备线程运行的主要方法
   if (should_increment) {
     // Decrement the count during shutdown if we incremented earlier.
     decrement_non_reentrant_thread_count();
@@ -477,9 +478,9 @@ auto Engine::thread_main(const std::shared_ptr<GraphTask>& graph_task) -> void {
       NodeTask task = local_ready_queue->pop();
       // This will only work if the worker is running a non backward task
       // TODO Needs to be fixed this to work in all cases
-      if (task.isShutdownTask_) { //检测到Shutdown时终止引擎
+      if (task.isShutdownTask_) { //检测到Shutdown节点时线程停止
         C10_LOG_API_USAGE_ONCE("torch.autograd.thread_shutdown");
-        break;
+        break; //跳出循环则该方法运行结束
       }
 
       if (!(local_graph_task = task.base_.lock())) {
@@ -1283,12 +1284,14 @@ bool Engine::is_checkpoint_valid() {
   return checkpoint_valid;
 }
 
+// 初始化local_ready_queue
 void Engine::init_local_ready_queue(std::shared_ptr<ReadyQueue> ready_queue) {
-  if (ready_queue) {
+  if (ready_queue) { //工作线程直接拷贝ready_queue
     // if ready_queue provided in the caller, use the caller's ready_queue to
     // initialize local_ready_queue
     local_ready_queue = std::move(ready_queue);
   } else if (!local_ready_queue) {
+    // 对于主线程，init_local_ready_queue 没有传入参数，并且local_ready_queue为空，则新生成一个queue
     // otherwise if local_ready_queue not allocated, allocate a new ready_queue
     local_ready_queue = std::make_shared<ReadyQueue>();
   }
@@ -1368,10 +1371,10 @@ auto Engine::start_device_threads() -> void {
   }
 
   for (const auto i : c10::irange(num_devices)) {
-    std::thread t(&Engine::thread_init, this, i, device_ready_queues_[i], true); //初始化非CPU设备的对应线程
-    t.detach(); //将工作线程与主线程分离
+    std::thread t(&Engine::thread_init, this, i, device_ready_queues_[i], true); //初始化非CPU设备的对应线程,运行thread_init方法
+    t.detach(); //将设备线程与主线程分离
   }
-  //等待所有工作线程启动
+  // 等待所有设备线程启动
   // Wait for the threads to start
   {
     std::unique_lock<std::mutex> lk(non_reentrant_device_thread_mutex_);
