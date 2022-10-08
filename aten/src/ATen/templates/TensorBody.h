@@ -1,4 +1,4 @@
-// at::Tensor定义, 继承at::Tensor类(位于ATen/core/TensorBase.h), 方法包括赋值等运算符重载、autograd的backward和hook
+// at::Tensor定义, 继承at::Tensor类(位于ATen/core/TensorBase.h), 方法包括赋值等运算符重载、autograd的backward(功能实现在autograd模块)和hook
 #pragma once
 
 #ifdef TORCH_ASSERT_NO_OPERATORS
@@ -640,6 +640,7 @@ class TORCH_API Tensor: public TensorBase {
     return TensorBase::data();
   }
 
+  // 在/torch/csrc/autograd/variable.cpp中_backward具体实现，实际调用torch::autograd::backward
   void _backward(TensorList inputs, const c10::optional<Tensor>& gradient, c10::optional<bool> keep_graph, bool create_graph) const;
 
   const Tensor& requires_grad_(bool _requires_grad=true) const {
