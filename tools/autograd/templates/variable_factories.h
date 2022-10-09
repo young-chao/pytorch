@@ -23,6 +23,7 @@ $ops_headers
 
 namespace torch {
 
+/// 当前使用`torch::tensor(...)`不支持混合数据类型
 /// NOTE: Currently `torch::tensor(...)` doesn't support mixed data types
 /// (i.e. `torch::tensor({{bool, 2.0}})` doesn't work). We might be able to
 /// support it in the future by iterating over all sub-lists to find
@@ -37,6 +38,7 @@ namespace torch {
 /// (nested) braced-init-list of integer types always produces a tensor of dtype `at::kLong`
 /// (aka. int64_t), matching Python `torch.tensor` behavior.
 ///
+/// 目前`torch::tensor`不支持无符号整型和长整型
 /// NOTE: The following dtypes are not supported by `torch::tensor` currently:
 /// - `unsigned int`
 /// - `unsigned long int`
