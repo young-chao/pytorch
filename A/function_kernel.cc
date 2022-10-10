@@ -20,6 +20,26 @@
   python_module: nn
   dispatch:
     QuantizedCPU: hardsigmoid_quantized_cpu
+
+- func: hardsigmoid_backward.grad_input(Tensor grad_output, Tensor self, *, Tensor(a!) grad_input) -> Tensor(a!)
+  structured: True
+  structured_inherits: TensorIteratorBase
+  python_module: nn
+  dispatch:
+    CPU, CUDA: hardsigmoid_backward_out
+
+- func: hardsigmoid_backward(Tensor grad_output, Tensor self) -> Tensor
+  structured_delegate: hardsigmoid_backward.grad_input
+  python_module: nn
+----------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+/* 
+   tools/autograd/derivatives.yaml:
+   backward函数注册
+*/
+- name: hardsigmoid(Tensor self) -> Tensor
+  self: hardsigmoid_backward(grad, self)
+  result: auto_element_wise
 ----------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------
 /* 
@@ -36,6 +56,10 @@ TORCH_IMPL_FUNC(hardsigmoid_backward_out) (
 ) {
   hardsigmoid_backward_stub(device_type(), *this);
 }
+/*
+TORCH_IMPL_FUNC(hardsigmoid_out) 等价为 void structured_hardsigmoid_out::impl
+TORCH_IMPL_FUNC(hardsigmoid_backward_out) 等价为 void structured_hardsigmoid_backward_out::impl
+*/
 
 DEFINE_DISPATCH(hardsigmoid_stub);
 DEFINE_DISPATCH(hardsigmoid_backward_stub);
@@ -43,7 +67,6 @@ DEFINE_DISPATCH(hardsigmoid_backward_stub);
 ----------------------------------------------------------------------------------------
 /* 
    aten/src/ATen/native/Activation.h:
-   定义对应的fn
 */
 using hardsigmoid_fn = void(*)(TensorIteratorBase&);
 using hardsigmoid_backward_fn = void(*)(TensorIteratorBase&);
