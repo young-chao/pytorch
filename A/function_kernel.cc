@@ -1,4 +1,15 @@
-// 算子由function注册到kernel调用(nn.functional.hardsigmoid)
+// 由function注册到kernel实现(nn.functional.hardsigmoid)
+----------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+/*
+定义内核函数，然后使用DECLARE/ register DISPATCH对其进行注册，以cpu为例过程如下:
+1) 在头文件中使用DECLARE_DISPATCH(fn_type, fnNameImpl)声明调度;其中fn_type是内核的函数指针类型(例如，定义为使用
+   fn_type = void(*)(tenor &，const tenor &), fnNameImpl是调度注册表的名称。
+2) 使用DEFINE_DISPATCH(fnNameImpl)(与声明的名称匹配)在cpu目录之外的c++文件中定义调度(调度必须只定义一次)。在这个
+   c++文件中包含声明分派的头文件。按照惯例，在定义native函数的文件中定义调度。
+3) 定义一个使用fnNameImpl(kCPU, arguments…)调用调度的native函数，其中参数是根据在声明中定义的fn_type定义的参数。
+4) 将实际内核(例如your_kernel)写入cpu目录，并使用REGISTER_DISPATCH(fnNameImpl，&your_kernel)将其注册到调度。
+*/
 ----------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------
 /* 
@@ -61,6 +72,7 @@ TORCH_IMPL_FUNC(hardsigmoid_out) 等价为 void structured_hardsigmoid_out::impl
 TORCH_IMPL_FUNC(hardsigmoid_backward_out) 等价为 void structured_hardsigmoid_backward_out::impl
 */
 
+// 定义调度实现
 DEFINE_DISPATCH(hardsigmoid_stub);
 DEFINE_DISPATCH(hardsigmoid_backward_stub);
 ----------------------------------------------------------------------------------------
@@ -71,6 +83,7 @@ DEFINE_DISPATCH(hardsigmoid_backward_stub);
 using hardsigmoid_fn = void(*)(TensorIteratorBase&);
 using hardsigmoid_backward_fn = void(*)(TensorIteratorBase&);
 
+// fn为函数指针，stub为调度注册表
 DECLARE_DISPATCH(hardsigmoid_fn, hardsigmoid_stub);
 DECLARE_DISPATCH(hardsigmoid_backward_fn, hardsigmoid_backward_stub);
 ----------------------------------------------------------------------------------------
