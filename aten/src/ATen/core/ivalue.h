@@ -130,6 +130,12 @@ struct Capsule {
       : obj_ptr(std::move(ptr)) {}
 };
 
+/* IValue 解释器值：
+   Pytorch中对数据的一个统一表达。从概念上，一个16-byte IValue类型由 3 个字段组成，
+   一个8-byte的payload类型，可以理解为指向相关数据的指针，4-byte的tag则是表示Ivalue
+   中包含的值是何种类型，最后一个是1-byte的bool类型，用于标记该类型是否是
+   c10::intrusive_ptr_target的子类型，是需要保留还是释放调用。
+*/
 // IValue is the generic tagged union used by the interpreter to hold
 // all value types.
 // It is a 16-byte object with an 8-byte payload and an 8-byte tag.
@@ -168,6 +174,13 @@ struct Capsule {
 // they are marked `@private`, which hides them on the doxygen documentation for
 // this page.
 
+/* IValue(解释器值)是TorchScript解释器支持的类型的标记联合。IValues包含它们的值为
+   'IValue::Payload '，它持有基本类型('int64_t'，'bool'，'double'， 'Device')和
+   'Tensor'作为值，所有其他类型为'c10::intrusive_ptr'。为了优化析构函数和相关操作
+   的性能，让'Tensor'和'c10::intrusive_ptr'路径生成相同的代码，我们将空'c10::intrusive_ptr'
+   表示为'UndefinedTensorImpl::singleton()'，而不是'nullptr'。
+
+*/
 /// IValue (Interpreter Value) is a tagged union over the types
 /// supported by the TorchScript interpreter. IValues contain their
 /// values as an `IValue::Payload`, which holds primitive types
