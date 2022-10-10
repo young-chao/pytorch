@@ -130,11 +130,10 @@ struct Capsule {
       : obj_ptr(std::move(ptr)) {}
 };
 
-/* IValue 解释器值：
-   Pytorch中对数据的一个统一表达。从概念上，一个16-byte IValue类型由 3 个字段组成，
-   一个8-byte的payload类型，可以理解为指向相关数据的指针，4-byte的tag则是表示Ivalue
-   中包含的值是何种类型，最后一个是1-byte的bool类型，用于标记该类型是否是
-   c10::intrusive_ptr_target的子类型，是需要保留还是释放调用。
+/* IValue解释器值（旧版本中分为3个部分，payload、tag和is_intrusive_ptr）：
+   Pytorch中对数据的一个统一表达。从概念上，它是一个16字节的对象，具有8字节的payload和8
+   字节的tag。当前tag用4个字节来确定类型，用1个字节来标记该类型是否是c10::intrusive_ptr_target
+   的子类型，是否需要保留/释放调用。
 */
 // IValue is the generic tagged union used by the interpreter to hold
 // all value types.
@@ -1136,6 +1135,7 @@ public:
     }
   }
 
+  // 一个用于存储数据的union，方便拷贝，存储数据类型为以下定义之一
   union Payload {
     // We use a nested union here so that we can make the copy easy
     // and efficient in the non-tensor (i.e., trivially copyable)
@@ -1174,8 +1174,8 @@ public:
 
   friend MaybeOwnedTraits<IValue>;
 
-  Payload payload;
-  Tag tag;
+  Payload payload; //用于存储数据的内嵌union
+  Tag tag; //对IValue可以包含数据类型的一个枚举
   friend struct WeakIValue;
 };
 
