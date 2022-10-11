@@ -310,9 +310,9 @@ private:
   std::mutex mutex_;
 };
 
-/* operator外层处理类，实际调用指针成员operatorDef_(OperatorDef类型)的成员
-   op(OperatorEntry类型)来获取算子, 可参考Dispatcher::callBoxedForDispatchKey
-   函数了解使用dispatchkey获取特定kernel的过程
+/* operator外层处理类，实际调用指针成员operatorDef_(OperatorDef类型)的成员op
+   (OperatorEntry类型)来获取算子调用入口, 可参考Dispatcher::callBoxedForDispatchKey
+   函数了解使用dispatchkey获取特定kernel函数的过程
 */
 /**
  * This is a handle to an operator schema registered with the dispatcher.
