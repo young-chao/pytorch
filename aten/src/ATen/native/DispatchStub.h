@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <atomic>
 
+// 用于实现特定函数的调度
 // Implements instruction set specific function dispatch.
 //
 // Kernels that may make use of specialized instruction sets (e.g. AVX2) are
