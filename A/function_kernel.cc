@@ -13,8 +13,8 @@
 ----------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------
 /* 
-   aten/src/ATen/native/native_functions.yaml:
-   函数注册，dispatch针对不同的backend调用不同的kernel
+   添加算子的说明，包括反向传播函数的算子
+   aten/src/ATen/native/native_functions.yaml: 
 */
 - func: hardsigmoid.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
   structured: True
@@ -45,8 +45,8 @@
 ----------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------
 /* 
+   添加算子和反向算子的对应关系
    tools/autograd/derivatives.yaml:
-   backward函数注册
 */
 - name: hardsigmoid(Tensor self) -> Tensor
   self: hardsigmoid_backward(grad, self)
@@ -54,8 +54,8 @@
 ----------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------
 /* 
-   aten/src/ATen/native/Activation.cpp:
-   激活函数位于Activation.cpp，其它函数位于该目录下其它文件
+   通过C++实现相关的算子流程（此处仅为定义实现）
+   aten/src/ATen/native/Activation.cpp:激活函数位于Activation.cpp，其它函数位于该目录下其它文件
 */
 TORCH_IMPL_FUNC(hardsigmoid_out) (
   const Tensor& self, const Tensor& result
@@ -89,8 +89,8 @@ DECLARE_DISPATCH(hardsigmoid_backward_fn, hardsigmoid_backward_stub);
 ----------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------
 /* 
+   通过C++实现相关的算子流程（kernel函数真正实现）
    aten/src/ATen/native/cpu/Activation.cpp:
-   cpu后端的kernel函数实现
 */
 REGISTER_DISPATCH(hardsigmoid_stub, &hardsigmoid_kernel);
 REGISTER_DISPATCH(hardsigmoid_backward_stub, &hardsigmoid_backward_kernel);
