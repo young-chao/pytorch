@@ -44,6 +44,7 @@ class RegistrationListenerList;
 }
 class SchemaRegistrationHandleRAII;
 
+// 顶层的调度程序接口，采取单例模式
 /**
  * Top-level dispatch interface for dispatching via the dynamic dispatcher.
  * Most end users shouldn't use this directly; if you're trying to register
@@ -112,6 +113,7 @@ public:
   //
   // ------------------------------------------------------------------------
 
+  // 根据operator名找到对应OperatorHandle
   /**
    * Looks for an operator schema with the given name and overload name
    * and returns it if it is registered WITH A SCHEMA.
@@ -181,6 +183,7 @@ public:
   //
   // ------------------------------------------------------------------------
 
+  // operator定义注册
   /**
    * Register a new operator schema.
    *
@@ -189,6 +192,7 @@ public:
    */
   RegistrationHandleRAII registerDef(FunctionSchema schema, std::string debug, std::vector<at::Tag> tags = {});
 
+  // operator到kernel映射注册：为一个operator在调度表中注册kernel函数
   /**
    * Register a kernel to the dispatch table for an operator.
    * If dispatch_key is nullopt, then this registers a fallback kernel.
@@ -200,11 +204,13 @@ public:
   // it for a bit until the real schema turns up
   RegistrationHandleRAII registerImpl(OperatorName op_name, c10::optional<DispatchKey> dispatch_key, KernelFunction kernel, c10::optional<impl::CppSignature> cpp_signature, std::unique_ptr<FunctionSchema> inferred_function_schema, std::string debug);
 
+  // 通过名字注册一个operator
   /**
    * Register a new operator by name.
    */
   RegistrationHandleRAII registerName(OperatorName op_name);
 
+  // 注册一个备用kernel函数
   /**
    * Register a fallback kernel for a backend.
    * If an operator is called but there is no concrete kernel for the dispatch
@@ -287,7 +293,9 @@ private:
   void cleanup(const OperatorHandle& op, const OperatorName& op_name);
   void checkSchemaCompatibility(const OperatorHandle& op, const FunctionSchema& schema, const std::string& debug);
 
+  // 存储了所有的算子
   std::list<OperatorDef> operators_;
+  // 存储算子名称和算子handle的哈希表
 #if !defined(C10_MOBILE)
   LeftRight<ska::flat_hash_map<OperatorName, OperatorHandle>> operatorLookupTable_;
 #else
@@ -302,6 +310,10 @@ private:
   std::mutex mutex_;
 };
 
+/* operator外层处理类，实际调用指针成员operatorDef_(OperatorDef类型)的成员
+   op(OperatorEntry类型)来获取算子, 可参考Dispatcher::callBoxedForDispatchKey
+   函数了解使用dispatchkey获取特定kernel的过程
+*/
 /**
  * This is a handle to an operator schema registered with the dispatcher.
  * This handle can be used to register kernels with the dispatcher or
@@ -412,7 +424,7 @@ private:
   // because the prev/next pointers come first in the list node
   // struct. So, an add instruction would be necessary to convert from the
   // iterator to an OperatorDef*.
-  Dispatcher::OperatorDef* operatorDef_;
+  Dispatcher::OperatorDef* operatorDef_; //指向OperatorDef的直接指针,用于获取operator调用入口
 
   // We need to store this iterator in order to make
   // Dispatcher::cleanup() fast -- it runs a lot on program
